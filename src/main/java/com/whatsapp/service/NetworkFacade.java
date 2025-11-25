@@ -51,6 +51,7 @@ public class NetworkFacade implements NetworkEventObserver {
                                 
                                 if (header.getTipo() == com.whatsapp.protocol.MessageHeader.MessageType.CONTROL) {
                                     // Es un mensaje de control, procesarlo
+                                    logger.info("NetworkFacade detectó mensaje de CONTROL, procesando...");
                                     com.whatsapp.service.ControlService controlService = 
                                         new com.whatsapp.service.ControlService();
                                     controlService.handleControlMessage(data, event.getSource());
@@ -79,6 +80,11 @@ public class NetworkFacade implements NetworkEventObserver {
         connectionManager.connectToServer(host, port);
         logService.logInfo("Conectado a servidor vía NetworkFacade", "NetworkFacade", 
                           logService.generateTraceId(), null);
+    }
+
+    public void disconnectClients() {
+        connectionManager.disconnectAllClients();
+        videoStreamService.stopStreaming();
     }
 
     public void disconnect() {

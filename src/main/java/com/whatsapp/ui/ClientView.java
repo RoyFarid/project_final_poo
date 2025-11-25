@@ -31,7 +31,6 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
     private final TextField serverPortField;
     private Button connectButton;
     private Button disconnectButton;
-    private String selectedConnectionId;
 
     public ClientView(Usuario currentUser) {
         this.currentUser = currentUser;
@@ -93,7 +92,6 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
         usersList.setOnMouseClicked(e -> {
             String selected = usersList.getSelectionModel().getSelectedItem();
             if (selected != null) {
-                selectedConnectionId = selected;
                 openChatWindow(selected);
             }
         });
@@ -134,7 +132,7 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
     }
 
     private void disconnectFromServer() {
-        networkFacade.disconnect();
+        networkFacade.disconnectClients();
         
         Platform.runLater(() -> {
             connectButton.setDisable(false);
@@ -144,7 +142,6 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
             updateStatus("Estado: Desconectado");
             usersList.getItems().clear();
             serverUserList.clear();
-            selectedConnectionId = null;
         });
     }
 
@@ -174,75 +171,47 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
     @Override
     public void onNetworkEvent(NetworkEvent event) {
         Platform.runLater(() -> {
+            if (!"SERVER".equals(event.getSource()) || !(event.getData() instanceof String)) {
+                return;
+            }
+
+            String payload = (String) event.getData();
             switch (event.getType()) {
                 case CONNECTED:
-                    // Si el evento viene del servidor con datos JSON, es la lista de usuarios
-                    if (event.getSource().equals("SERVER") && event.getData() instanceof String) {
-                        String data = (String) event.getData();
-                        System.out.println("Cliente recibió evento CONNECTED del servidor: " + data);
-                        // Verificar si es JSON (lista de usuarios)
-                        if (data.startsWith("[") && data.endsWith("]")) {
-                            try {
-                                Set<String> users = com.whatsapp.service.ControlService.parseUserListJson(data);
-                                System.out.println("Parseó lista de usuarios: " + users);
-                                serverUserList.clear();
-                                serverUserList.addAll(users);
-                                usersList.getItems().clear();
-                                usersList.getItems().addAll(serverUserList);
-                                System.out.println("Lista actualizada en UI: " + usersList.getItems());
-                            } catch (Exception e) {
-                                System.err.println("Error parseando JSON de usuarios: " + e.getMessage());
-                                e.printStackTrace();
-                                // Si no es JSON, es un ID de usuario individual
-                                String userId = data;
-                                if (!serverUserList.contains(userId)) {
-                                    serverUserList.add(userId);
-                                    usersList.getItems().clear();
-                                    usersList.getItems().addAll(serverUserList);
-                                }
-                            }
-                        } else {
-                            // Es un ID de usuario individual
-                            String userId = data;
-                            System.out.println("Agregando usuario individual: " + userId);
-                            if (!serverUserList.contains(userId)) {
-                                serverUserList.add(userId);
-                                usersList.getItems().clear();
-                                usersList.getItems().addAll(serverUserList);
-                            }
-                        }
-                    } else {
-                        // Actualizar lista de usuarios conectados (método antiguo)
-                        updateConnectedUsers();
-                    }
+                    handleServerConnectedPayload(payload);
                     break;
                 case DISCONNECTED:
-                    // Si el evento viene del servidor, es una desconexión
-                    if (event.getSource().equals("SERVER") && event.getData() instanceof String) {
-                        String userId = (String) event.getData();
-                        serverUserList.remove(userId);
-                        usersList.getItems().clear();
-                        usersList.getItems().addAll(serverUserList);
-                    } else {
-                        // Actualizar lista de usuarios conectados (método antiguo)
-                        updateConnectedUsers();
-                    }
+                    serverUserList.remove(payload);
+                    refreshUsersList();
+                    break;
+                default:
                     break;
             }
         });
     }
 
-    private void updateConnectedUsers() {
-        // Obtener usuarios del servidor (si está disponible)
-        Set<String> connectedUsers = networkFacade.getConnectedClients();
-        usersList.getItems().clear();
-        
-        // Si hay usuarios, agregarlos
-        if (connectedUsers != null && !connectedUsers.isEmpty()) {
-            usersList.getItems().addAll(connectedUsers);
+    private void handleServerConnectedPayload(String data) {
+        if (data.startsWith("[") && data.endsWith("]")) {
+            try {
+                Set<String> users = com.whatsapp.service.ControlService.parseUserListJson(data);
+                serverUserList.clear();
+                serverUserList.addAll(users);
+                refreshUsersList();
+                return;
+            } catch (Exception ignored) {
+                // caer a manejo como usuario individual
+            }
+        }
+
+        if (serverUserList.add(data)) {
+            refreshUsersList();
         }
     }
-    
+
+    private void refreshUsersList() {
+        usersList.getItems().setAll(serverUserList);
+    }
+
     // Almacenar la lista de usuarios recibida del servidor
     private final java.util.Set<String> serverUserList = new java.util.HashSet<>();
 }

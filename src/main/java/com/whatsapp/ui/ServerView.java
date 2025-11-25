@@ -212,7 +212,8 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
             switch (event.getType()) {
                 case CONNECTED:
                     String clientId = event.getData().toString();
-                    if (!connectedUsersList.getItems().contains(clientId)) {
+                    // Filtrar el evento "Servidor iniciado" - no es un cliente
+                    if (!clientId.equals("Servidor iniciado") && !connectedUsersList.getItems().contains(clientId)) {
                         connectedUsersList.getItems().add(clientId);
                         addActivity("Usuario conectado: " + clientId);
                     }

@@ -5,6 +5,7 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -25,7 +26,7 @@ public class ConnectionManager {
     private static ConnectionManager instance;
     private final Map<String, Socket> connections;
     private final Map<String, DataOutputStream> outputStreams;
-    private final ExecutorService executorService;
+    private ExecutorService executorService;
     private ServerSocket serverSocket;
     private final AtomicBoolean isRunning;
     private ConnectionState state;
@@ -57,6 +58,7 @@ public class ConnectionManager {
             throw new IllegalStateException("El servidor ya está en ejecución");
         }
 
+        ensureExecutorService();
         serverSocket = SocketFactory.createTcpServerSocket(port);
         isRunning.set(true);
         setState(ConnectionState.ACTIVO);
@@ -76,11 +78,13 @@ public class ConnectionManager {
                     eventAggregator.publish(new NetworkEvent(NetworkEvent.EventType.CONNECTED, clientId, "SERVER"));
                     
                     // Iniciar hilo para recibir mensajes de este cliente
+                    ensureExecutorService();
                     executorService.submit(() -> handleClient(clientId, clientSocket));
                     
                     // Enviar lista de usuarios conectados al nuevo cliente (después de iniciar el hilo)
                     // Usar un pequeño retraso para asegurar que el cliente esté listo
                     final String finalClientId = clientId;
+                    ensureExecutorService();
                     executorService.submit(() -> {
                         try {
                             Thread.sleep(200); // Aumentar retraso para asegurar que el cliente esté listo
@@ -115,10 +119,12 @@ public class ConnectionManager {
     }
 
     public Socket connectToServer(String host, int port) throws IOException {
+        ensureExecutorService();
         Socket socket = SocketFactory.createTcpSocket(host, port);
         String connectionId = socket.getRemoteSocketAddress().toString();
         connections.put(connectionId, socket);
         outputStreams.put(connectionId, new DataOutputStream(socket.getOutputStream()));
+        isRunning.set(true);
         setState(ConnectionState.ACTIVO);
         
         logService.logInfo("Conectado a servidor: " + host + ":" + port, "ConnectionManager", traceId, null);
@@ -137,6 +143,21 @@ public class ConnectionManager {
                 if (length > 0 && length < 10 * 1024 * 1024) { // Max 10MB
                     byte[] data = new byte[length];
                     input.readFully(data);
+                    logger.debug("Mensaje recibido de " + clientId + ", tamaño: " + length);
+                    // Verificar si es mensaje de control para logging
+                    if (length >= com.whatsapp.protocol.MessageHeader.HEADER_SIZE) {
+                        try {
+                            byte[] headerBytes = new byte[com.whatsapp.protocol.MessageHeader.HEADER_SIZE];
+                            System.arraycopy(data, 0, headerBytes, 0, headerBytes.length);
+                            com.whatsapp.protocol.MessageHeader header = 
+                                com.whatsapp.protocol.MessageHeader.fromBytes(headerBytes);
+                            if (header.getTipo() == com.whatsapp.protocol.MessageHeader.MessageType.CONTROL) {
+                                logger.info("Mensaje de CONTROL recibido de " + clientId);
+                            }
+                        } catch (Exception e) {
+                            // Ignorar errores de parsing para logging
+                        }
+                    }
                     eventAggregator.publish(new NetworkEvent(NetworkEvent.EventType.MESSAGE_RECEIVED, data, clientId));
                 }
             }
@@ -213,7 +234,8 @@ public class ConnectionManager {
             }
         }
         
-        executorService.shutdown();
+        executorService.shutdownNow();
+        ensureExecutorService();
         logService.logInfo("ConnectionManager detenido", "ConnectionManager", traceId, null);
     }
 
@@ -239,6 +261,18 @@ public class ConnectionManager {
 
     public java.util.Set<String> getConnectedClients() {
         return connections.keySet();
+    }
+
+    public void disconnectAllClients() {
+        for (String connectionId : new ArrayList<>(connections.keySet())) {
+            disconnectClient(connectionId);
+        }
+    }
+
+    private void ensureExecutorService() {
+        if (executorService == null || executorService.isShutdown() || executorService.isTerminated()) {
+            executorService = Executors.newCachedThreadPool();
+        }
     }
 }
 

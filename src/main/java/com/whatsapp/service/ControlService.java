@@ -42,8 +42,11 @@ public class ControlService {
      */
     public void sendUserList(String connectionId) throws IOException {
         Set<String> connectedUsers = connectionManager.getConnectedClients();
+        logger.info("Enviando lista de usuarios a " + connectionId + ". Usuarios: " + connectedUsers);
         String userListJson = buildUserListJson(connectedUsers);
+        logger.info("JSON generado: " + userListJson);
         sendControlMessage(connectionId, CONTROL_USER_LIST, userListJson);
+        logger.info("Mensaje de control enviado exitosamente");
     }
 
     /**
@@ -85,6 +88,7 @@ public class ControlService {
             byte[] fullMessage = baos.toByteArray();
 
             connectionManager.send(connectionId, fullMessage);
+            logger.info("Mensaje de control enviado a " + connectionId + " (tipo: " + controlType + ", datos: " + data + ")");
             logService.logInfo("Mensaje de control enviado a " + connectionId, "ControlService", traceId, null);
         } catch (Exception e) {
             logger.error("Error enviando mensaje de control", e);
@@ -111,10 +115,12 @@ public class ControlService {
      */
     public void handleControlMessage(byte[] data, String source) {
         try {
+            logger.info("Procesando mensaje de control recibido de " + source + ", tamaño: " + data.length);
             // Parsear header
             byte[] headerBytes = new byte[MessageHeader.HEADER_SIZE];
             System.arraycopy(data, 0, headerBytes, 0, MessageHeader.HEADER_SIZE);
             MessageHeader header = MessageHeader.fromBytes(headerBytes);
+            logger.info("Header parseado - Tipo: " + header.getTipo() + ", Longitud: " + header.getLongitud());
 
             if (header.getTipo() == MessageHeader.MessageType.CONTROL) {
                 // Leer tipo de control
@@ -124,6 +130,7 @@ public class ControlService {
                 byte[] dataBytes = new byte[header.getLongitud() - 1]; // -1 porque el tipo de control ya se leyó
                 System.arraycopy(data, MessageHeader.HEADER_SIZE + 1, dataBytes, 0, dataBytes.length);
                 String controlData = new String(dataBytes, StandardCharsets.UTF_8);
+                logger.info("Tipo de control: " + controlType + ", Datos: " + controlData);
 
                 // Verificar checksum
                 int calculatedChecksum = calculateChecksum(dataBytes);
