@@ -222,15 +222,19 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
     @Override
     public void onNetworkEvent(NetworkEvent event) {
         Platform.runLater(() -> {
-            if (event.getType() == NetworkEvent.EventType.MESSAGE_RECEIVED) {
-                if (event.getData() instanceof ChatService.ChatMessage msg) {
-                    if (msg.getSource().equals(connectionId)) {
+            switch (event.getType()) {
+                case MESSAGE_RECEIVED -> {
+                    if (event.getData() instanceof ChatService.ChatMessage msg
+                        && msg.getSource().equals(connectionId)) {
                         addMessage(connectionId + ": " + msg.getMessage());
                     }
                 }
-            } else if (event.getType() == NetworkEvent.EventType.FILE_PROGRESS) {
-                if (event.getData() instanceof com.whatsapp.service.FileTransferService.FileProgress progress) {
-                    if (progress.getProgress() >= 100.0) {
+                case FILE_PROGRESS -> {
+                    if (!connectionId.equals(event.getSource())) {
+                        return;
+                    }
+                    if (event.getData() instanceof com.whatsapp.service.FileTransferService.FileProgress progress
+                        && progress.getProgress() >= 100.0) {
                         if (progress.isIncoming()) {
                             handleIncomingFile(progress);
                         } else {
@@ -238,17 +242,19 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
                         }
                     }
                 }
-            } else if (event.getType() == NetworkEvent.EventType.DISCONNECTED) {
-                if (event.getData().toString().equals(connectionId)) {
-                    statusLabel.setText("Desconectado");
-                    statusLabel.setStyle("-fx-text-fill: red;");
-                }
-            } else if (event.getType() == NetworkEvent.EventType.VIDEO_FRAME) {
-                if (event.getData() instanceof VideoStreamService.VideoFramePayload framePayload) {
-                    if (framePayload.getPeerId().equals(connectionId)) {
+                case VIDEO_FRAME -> {
+                    if (event.getData() instanceof VideoStreamService.VideoFramePayload framePayload
+                        && framePayload.getPeerId().equals(connectionId)) {
                         showVideoFrame(framePayload.getData());
                     }
                 }
+                case DISCONNECTED -> {
+                    if (event.getData().toString().equals(connectionId)) {
+                        statusLabel.setText("Desconectado");
+                        statusLabel.setStyle("-fx-text-fill: red;");
+                    }
+                }
+                default -> { }
             }
         });
     }

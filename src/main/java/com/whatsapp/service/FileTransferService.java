@@ -19,7 +19,6 @@ import java.io.DataOutputStream;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.ObjectOutputStream;
 import java.io.RandomAccessFile;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -136,14 +135,15 @@ public class FileTransferService {
     private void sendFileMetadata(String serverConnectionId, String targetConnectionId, String fileName, long fileSize, String checksum, int transferId) throws IOException {
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            ObjectOutputStream oos = new ObjectOutputStream(baos);
-            oos.writeUTF(fileName);
-            oos.writeLong(fileSize);
-            oos.writeUTF(checksum);
-            oos.writeInt(transferId);
-            oos.flush();
-            byte[] metadata = baos.toByteArray();
+            try (DataOutputStream dos = new DataOutputStream(baos)) {
+                dos.writeUTF(fileName);
+                dos.writeLong(fileSize);
+                dos.writeUTF(checksum);
+                dos.writeInt(transferId);
+                dos.flush();
+            }
 
+            byte[] metadata = baos.toByteArray();
             byte[] routedPayload = wrapRoutedPayload(DIRECTION_CLIENT_TO_SERVER, FRAME_METADATA, targetConnectionId, metadata);
             int correlId = correlIdGenerator.incrementAndGet();
             int checksumInt = calculateChecksum(routedPayload);
@@ -171,13 +171,14 @@ public class FileTransferService {
         while (attempts < 5) {
             try {
                 ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                ObjectOutputStream oos = new ObjectOutputStream(baos);
-                oos.writeInt(transferId);
-                oos.writeInt(chunkNumber);
-                oos.writeLong(offset);
-                oos.writeInt(chunk.length);
-                oos.write(chunk);
-                oos.flush();
+                try (DataOutputStream dos = new DataOutputStream(baos)) {
+                    dos.writeInt(transferId);
+                    dos.writeInt(chunkNumber);
+                    dos.writeLong(offset);
+                    dos.writeInt(chunk.length);
+                    dos.write(chunk);
+                    dos.flush();
+                }
                 byte[] chunkData = baos.toByteArray();
 
                 byte[] routedPayload = wrapRoutedPayload(DIRECTION_CLIENT_TO_SERVER, FRAME_CHUNK, targetConnectionId, chunkData);
