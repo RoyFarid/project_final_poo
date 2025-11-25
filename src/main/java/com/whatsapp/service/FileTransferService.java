@@ -271,6 +271,7 @@ public class FileTransferService {
                 targetPath,
                 checksum,
                 fileSize,
+                null,
                 raf
             ));
 
@@ -335,18 +336,24 @@ public class FileTransferService {
         String calculatedChecksum = calculateSHA256(transfer.outputPath);
         boolean checksumOk = calculatedChecksum.equalsIgnoreCase(transfer.checksum);
 
-        Transferencia transferencia = new Transferencia(
-            Transferencia.TipoTransferencia.ARCHIVO,
-            transfer.outputPath.getFileName().toString(),
-            transfer.fileSize,
-            calculatedChecksum,
-            null,
-            transfer.senderId
-        );
-        transferencia.setEstado(checksumOk ? Transferencia.EstadoTransferencia.COMPLETADA :
-            Transferencia.EstadoTransferencia.ERROR);
-        transferencia.setFin(LocalDateTime.now());
-        transferenciaRepository.save(transferencia);
+        // Guardar la transferencia solo si tenemos un userId (en el cliente receptor no siempre lo hay)
+        Long userId = transfer.userId;
+        if (userId != null) {
+            Transferencia transferencia = new Transferencia(
+                Transferencia.TipoTransferencia.ARCHIVO,
+                transfer.outputPath.getFileName().toString(),
+                transfer.fileSize,
+                calculatedChecksum,
+                userId,
+                transfer.senderId
+            );
+            transferencia.setEstado(checksumOk ? Transferencia.EstadoTransferencia.COMPLETADA :
+                Transferencia.EstadoTransferencia.ERROR);
+            transferencia.setFin(LocalDateTime.now());
+            transferenciaRepository.save(transferencia);
+        } else {
+            logger.info("Transferencia recibida sin userId; se omite persistencia");
+        }
 
         if (checksumOk) {
             logService.logInfo("Archivo recibido correctamente desde " + transfer.senderId,
@@ -473,15 +480,17 @@ public class FileTransferService {
         final Path outputPath;
         final String checksum;
         final long fileSize;
+        final Long userId;
         final RandomAccessFile raf;
         final AtomicLong transferred = new AtomicLong(0);
 
-        IncomingTransfer(int transferId, String senderId, Path outputPath, String checksum, long fileSize, RandomAccessFile raf) {
+        IncomingTransfer(int transferId, String senderId, Path outputPath, String checksum, long fileSize, Long userId, RandomAccessFile raf) {
             this.transferId = transferId;
             this.senderId = senderId;
             this.outputPath = outputPath;
             this.checksum = checksum;
             this.fileSize = fileSize;
+            this.userId = userId;
             this.raf = raf;
         }
     }
