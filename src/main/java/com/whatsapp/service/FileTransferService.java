@@ -302,7 +302,6 @@ public class FileTransferService {
             if (completed) {
                 finalizeIncomingTransfer(transfer);
                 progress = 100.0;
-                incomingTransfers.remove(transfer.transferId);
             }
 
             eventAggregator.publish(new NetworkEvent(
@@ -318,6 +317,10 @@ public class FileTransferService {
                 ),
                 transfer.senderId
             ));
+
+            if (completed) {
+                incomingTransfers.remove(transfer.transferId);
+            }
         }
     }
 

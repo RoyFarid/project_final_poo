@@ -229,8 +229,7 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
                     }
                 }
             } else if (event.getType() == NetworkEvent.EventType.FILE_PROGRESS) {
-                if (event.getData() instanceof com.whatsapp.service.FileTransferService.FileProgress progress
-                    && connectionId.equals(event.getSource())) {
+                if (event.getData() instanceof com.whatsapp.service.FileTransferService.FileProgress progress) {
                     if (progress.getProgress() >= 100.0) {
                         if (progress.isIncoming()) {
                             handleIncomingFile(progress);
