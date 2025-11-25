@@ -1,9 +1,5 @@
 package com.whatsapp.ui;
 
-import java.io.IOException;
-import java.util.LinkedHashMap;
-import java.util.Map;
-
 import com.whatsapp.model.Usuario;
 import com.whatsapp.network.observer.EventAggregator;
 import com.whatsapp.network.observer.NetworkEvent;
@@ -11,18 +7,15 @@ import com.whatsapp.network.observer.NetworkEventObserver;
 import com.whatsapp.service.ControlService;
 import com.whatsapp.service.NetworkFacade;
 import com.whatsapp.service.UserAliasRegistry;
-
 import javafx.application.Platform;
 import javafx.geometry.Insets;
-import javafx.scene.control.Alert;
-import javafx.scene.control.Button;
-import javafx.scene.control.Label;
-import javafx.scene.control.ListView;
-import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.HBox;
-import javafx.scene.layout.VBox;
+import javafx.scene.control.*;
+import javafx.scene.layout.*;
 import javafx.scene.text.Font;
 import javafx.scene.text.Text;
+
+import java.io.IOException;
+import java.util.*;
 
 public class ClientView extends BorderPane implements NetworkEventObserver {
     private final NetworkFacade networkFacade;

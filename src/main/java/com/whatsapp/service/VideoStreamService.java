@@ -1,5 +1,6 @@
 package com.whatsapp.service;
 
+import com.github.sarxos.webcam.Webcam;
 import com.whatsapp.network.ConnectionManager;
 import com.whatsapp.network.observer.EventAggregator;
 import com.whatsapp.network.observer.NetworkEvent;
@@ -7,21 +8,11 @@ import com.whatsapp.protocol.MessageHeader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.awt.Rectangle;
-import java.awt.Robot;
-import java.awt.Toolkit;
-import java.awt.image.BufferedImage;
 import javax.imageio.ImageIO;
-import java.awt.Dimension;
-import com.github.sarxos.webcam.Webcam;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.awt.*;
+import java.awt.image.BufferedImage;
+import java.io.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 

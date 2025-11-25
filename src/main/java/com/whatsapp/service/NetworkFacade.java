@@ -1,10 +1,7 @@
 package com.whatsapp.service;
 
-import com.whatsapp.network.ConnectionManager;
-import com.whatsapp.network.ConnectionState;
-import com.whatsapp.network.observer.EventAggregator;
-import com.whatsapp.network.observer.NetworkEvent;
-import com.whatsapp.network.observer.NetworkEventObserver;
+import com.whatsapp.network.*;
+import com.whatsapp.network.observer.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
