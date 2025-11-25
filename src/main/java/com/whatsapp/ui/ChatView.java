@@ -115,7 +115,11 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
         videoButton.setStyle("-fx-background-color: #128C7E; -fx-text-fill: white;");
         videoButton.setOnAction(e -> startVideoCall());
 
-        actionBox.getChildren().addAll(fileButton, videoButton);
+        Button stopVideoButton = new Button("Terminar Videollamada");
+        stopVideoButton.setStyle("-fx-background-color: #dc3545; -fx-text-fill: white;");
+        stopVideoButton.setOnAction(e -> stopVideoCall());
+
+        actionBox.getChildren().addAll(fileButton, videoButton, stopVideoButton);
         bottomBox.getChildren().addAll(messageBox, actionBox);
         setBottom(bottomBox);
     }
@@ -258,6 +262,17 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
         } catch (Exception e) {
             videoStatusLabel.setText("Video: error al decodificar");
             videoStatusLabel.setStyle("-fx-text-fill: #dc3545;");
+        }
+    }
+
+    private void stopVideoCall() {
+        try {
+            networkFacade.stopVideoCall();
+            videoStatusLabel.setText("Video: detenido");
+            videoStatusLabel.setStyle("-fx-text-fill: #dc3545;");
+            addMessage("Videollamada finalizada");
+        } catch (Exception e) {
+            showAlert("Error", "No se pudo detener la videollamada: " + e.getMessage(), Alert.AlertType.ERROR);
         }
     }
     private void handleIncomingFile(com.whatsapp.service.FileTransferService.FileProgress progress) {

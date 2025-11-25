@@ -17,6 +17,8 @@ import java.awt.Robot;
 import java.awt.Toolkit;
 import java.awt.image.BufferedImage;
 import javax.imageio.ImageIO;
+import java.awt.Dimension;
+import com.github.sarxos.webcam.Webcam;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -38,6 +40,7 @@ public class VideoStreamService {
     private static final byte DIRECTION_SERVER_TO_CLIENT = 1;
     private static final int FRAME_WIDTH = 320;
     private static final int FRAME_HEIGHT = 240;
+    private Webcam webcam;
 
     public VideoStreamService() {
         this.connectionManager = ConnectionManager.getInstance();
@@ -145,10 +148,45 @@ public class VideoStreamService {
         if (executorService != null) {
             executorService.shutdownNow();
         }
+        if (webcam != null && webcam.isOpen()) {
+            webcam.close();
+        }
         logService.logInfo("Streaming de video detenido", "VideoStreamService", traceId, null);
     }
 
     private byte[] captureFrame() {
+        try {
+            if (webcam == null) {
+                webcam = Webcam.getDefault();
+                if (webcam == null) {
+                    logger.warn("No se encontr\u00f3 webcam; usando captura de pantalla como fallback");
+                    return captureScreenFallback();
+                }
+                webcam.setViewSize(new Dimension(FRAME_WIDTH, FRAME_HEIGHT));
+                webcam.open(true);
+            }
+
+            if (!webcam.isOpen()) {
+                webcam.open(true);
+            }
+
+            BufferedImage image = webcam.getImage();
+            if (image == null) {
+                logger.warn("Webcam no entreg\u00f3 imagen, usando captura de pantalla fallback");
+                return captureScreenFallback();
+            }
+
+            try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+                ImageIO.write(image, "jpg", baos);
+                return baos.toByteArray();
+            }
+        } catch (Exception e) {
+            logger.error("No se pudo capturar frame de video", e);
+            return captureScreenFallback();
+        }
+    }
+
+    private byte[] captureScreenFallback() {
         try {
             Rectangle screenRect = new Rectangle(
                 0,
@@ -161,8 +199,8 @@ public class VideoStreamService {
                 ImageIO.write(image, "jpg", baos);
                 return baos.toByteArray();
             }
-        } catch (Exception e) {
-            logger.error("No se pudo capturar frame de video", e);
+        } catch (Exception ex) {
+            logger.error("Tampoco se pudo capturar pantalla como fallback", ex);
             return null;
         }
     }
