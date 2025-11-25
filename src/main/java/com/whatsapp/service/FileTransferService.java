@@ -110,12 +110,12 @@ public class FileTransferService {
                 chunkNumber++;
 
                 // Notificar progreso
-            double progress = (double) totalSent / fileSize * 100;
-            eventAggregator.publish(new NetworkEvent(
-                NetworkEvent.EventType.FILE_PROGRESS,
-                new FileProgress(transferId, fileName, progress, totalSent, fileSize, false, null),
-                targetConnectionId
-            ));
+                double progress = (double) totalSent / fileSize * 100;
+                eventAggregator.publish(new NetworkEvent(
+                    NetworkEvent.EventType.FILE_PROGRESS,
+                    new FileProgress(transferId, fileName, progress, totalSent, fileSize, false, null),
+                    targetConnectionId
+                ));
             }
 
             // Marcar como completada
@@ -144,16 +144,15 @@ public class FileTransferService {
             oos.flush();
             byte[] metadata = baos.toByteArray();
 
+            byte[] routedPayload = wrapRoutedPayload(DIRECTION_CLIENT_TO_SERVER, FRAME_METADATA, targetConnectionId, metadata);
             int correlId = correlIdGenerator.incrementAndGet();
-            int checksumInt = calculateChecksum(metadata);
+            int checksumInt = calculateChecksum(routedPayload);
             MessageHeader header = new MessageHeader(
                 MessageHeader.MessageType.ARCHIVO,
-                metadata.length,
+                routedPayload.length,
                 correlId,
                 checksumInt
             );
-
-            byte[] routedPayload = wrapRoutedPayload(DIRECTION_CLIENT_TO_SERVER, FRAME_METADATA, targetConnectionId, metadata);
 
             ByteArrayOutputStream fullMessage = new ByteArrayOutputStream();
             fullMessage.write(header.toBytes());
@@ -181,16 +180,15 @@ public class FileTransferService {
                 oos.flush();
                 byte[] chunkData = baos.toByteArray();
 
+                byte[] routedPayload = wrapRoutedPayload(DIRECTION_CLIENT_TO_SERVER, FRAME_CHUNK, targetConnectionId, chunkData);
                 int correlId = correlIdGenerator.incrementAndGet();
-                int checksum = calculateChecksum(chunkData);
+                int checksum = calculateChecksum(routedPayload);
                 MessageHeader header = new MessageHeader(
                     MessageHeader.MessageType.ARCHIVO,
-                    chunkData.length,
+                    routedPayload.length,
                     correlId,
                     checksum
                 );
-
-                byte[] routedPayload = wrapRoutedPayload(DIRECTION_CLIENT_TO_SERVER, FRAME_CHUNK, targetConnectionId, chunkData);
 
                 ByteArrayOutputStream fullMessage = new ByteArrayOutputStream();
                 fullMessage.write(header.toBytes());
