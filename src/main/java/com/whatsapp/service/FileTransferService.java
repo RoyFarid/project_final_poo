@@ -295,26 +295,29 @@ public class FileTransferService {
 
             transfer.raf.seek(offset);
             transfer.raf.write(chunk);
-            transfer.transferred.addAndGet(length);
+            long transferred = transfer.transferred.addAndGet(length);
+            double progress = (double) transferred / transfer.fileSize * 100;
 
-            double progress = (double) transfer.transferred.get() / transfer.fileSize * 100;
+            boolean completed = transferred >= transfer.fileSize;
+            if (completed) {
+                finalizeIncomingTransfer(transfer);
+                progress = 100.0;
+                incomingTransfers.remove(transfer.transferId);
+            }
+
             eventAggregator.publish(new NetworkEvent(
                 NetworkEvent.EventType.FILE_PROGRESS,
                 new FileProgress(
                     transferId,
                     transfer.outputPath.getFileName().toString(),
                     progress,
-                    transfer.transferred.get(),
+                    transferred,
                     transfer.fileSize,
                     true,
                     transfer.outputPath.toString()
                 ),
                 transfer.senderId
             ));
-
-            if (transfer.transferred.get() >= transfer.fileSize) {
-                finalizeIncomingTransfer(transfer);
-            }
         }
     }
 
