@@ -9,24 +9,24 @@ import java.io.IOException;
 public class SendFileCommand implements Command {
     private static final Logger logger = LoggerFactory.getLogger(SendFileCommand.class);
     private final NetworkFacade networkFacade;
-    private final String connectionId;
+    private final String serverConnectionId;
+    private final String targetConnectionId;
     private final String filePath;
     private final Long userId;
-    private final String peerIp;
 
-    public SendFileCommand(NetworkFacade networkFacade, String connectionId, 
-                          String filePath, Long userId, String peerIp) {
+    public SendFileCommand(NetworkFacade networkFacade, String serverConnectionId,
+                           String targetConnectionId, String filePath, Long userId) {
         this.networkFacade = networkFacade;
-        this.connectionId = connectionId;
+        this.serverConnectionId = serverConnectionId;
+        this.targetConnectionId = targetConnectionId;
         this.filePath = filePath;
         this.userId = userId;
-        this.peerIp = peerIp;
     }
 
     @Override
     public void execute() {
         try {
-            networkFacade.sendFile(connectionId, filePath, userId, peerIp);
+            networkFacade.sendFile(serverConnectionId, targetConnectionId, filePath, userId);
         } catch (IOException e) {
             logger.error("Error ejecutando SendFileCommand", e);
             throw new RuntimeException("Error enviando archivo", e);

@@ -35,36 +35,45 @@ public class NetworkFacade implements NetworkEventObserver {
         eventAggregator.subscribe(this);
         
         // Configurar listener para mensajes recibidos
-        eventAggregator.subscribe(new NetworkEventObserver() {
-            @Override
-            public void onNetworkEvent(NetworkEvent event) {
-                if (event.getType() == NetworkEvent.EventType.MESSAGE_RECEIVED) {
-                    if (event.getData() instanceof byte[]) {
-                        byte[] data = (byte[]) event.getData();
-                        // Verificar si es un mensaje de control
-                        if (data.length >= com.whatsapp.protocol.MessageHeader.HEADER_SIZE) {
-                            try {
-                                byte[] headerBytes = new byte[com.whatsapp.protocol.MessageHeader.HEADER_SIZE];
-                                System.arraycopy(data, 0, headerBytes, 0, headerBytes.length);
-                                com.whatsapp.protocol.MessageHeader header = 
-                                    com.whatsapp.protocol.MessageHeader.fromBytes(headerBytes);
-                                
-                                if (header.getTipo() == com.whatsapp.protocol.MessageHeader.MessageType.CONTROL) {
-                                    // Es un mensaje de control, procesarlo
-                                    logger.info("NetworkFacade detectó mensaje de CONTROL, procesando...");
-                                    com.whatsapp.service.ControlService controlService = 
-                                        new com.whatsapp.service.ControlService();
-                                    controlService.handleControlMessage(data, event.getSource());
-                                    return;
-                                }
-                            } catch (Exception e) {
-                                logger.warn("Error verificando tipo de mensaje", e);
-                            }
-                        }
-                        // Es un mensaje de chat normal
+        eventAggregator.subscribe(event -> {
+            if (event.getType() != NetworkEvent.EventType.MESSAGE_RECEIVED) {
+                return;
+            }
+
+            if (!(event.getData() instanceof byte[])) {
+                return;
+            }
+
+            byte[] data = (byte[]) event.getData();
+            if (data.length < com.whatsapp.protocol.MessageHeader.HEADER_SIZE) {
+                return;
+            }
+
+            try {
+                byte[] headerBytes = new byte[com.whatsapp.protocol.MessageHeader.HEADER_SIZE];
+                System.arraycopy(data, 0, headerBytes, 0, headerBytes.length);
+                com.whatsapp.protocol.MessageHeader header =
+                    com.whatsapp.protocol.MessageHeader.fromBytes(headerBytes);
+
+                switch (header.getTipo()) {
+                    case com.whatsapp.protocol.MessageHeader.MessageType.CONTROL:
+                        logger.info("NetworkFacade detectó mensaje de CONTROL, procesando...");
+                        ControlService controlService = new ControlService();
+                        controlService.handleControlMessage(data, event.getSource());
+                        break;
+                    case com.whatsapp.protocol.MessageHeader.MessageType.ARCHIVO:
+                        fileTransferService.handleIncomingPacket(data, event.getSource());
+                        break;
+                    case com.whatsapp.protocol.MessageHeader.MessageType.VIDEO:
+                        videoStreamService.handleIncomingPacket(data, event.getSource());
+                        break;
+                    case com.whatsapp.protocol.MessageHeader.MessageType.CHAT:
+                    default:
                         chatService.handleReceivedMessage(data, event.getSource());
-                    }
+                        break;
                 }
+            } catch (Exception e) {
+                logger.warn("Error procesando mensaje entrante", e);
             }
         });
     }
@@ -102,17 +111,13 @@ public class NetworkFacade implements NetworkEventObserver {
     }
 
     // Métodos de transferencia de archivos
-    public void sendFile(String connectionId, String filePath, Long userId, String peerIp) throws IOException {
-        fileTransferService.sendFile(connectionId, filePath, userId, peerIp);
+    public void sendFile(String serverConnectionId, String targetConnectionId, String filePath, Long userId) throws IOException {
+        fileTransferService.sendFile(serverConnectionId, targetConnectionId, filePath, userId);
     }
 
     // Métodos de video
-    public void startVideoCall(String targetHost, int targetPort) throws IOException {
-        videoStreamService.startStreaming(targetHost, targetPort);
-    }
-
-    public void startReceivingVideo(int port) throws IOException {
-        videoStreamService.startReceiving(port);
+    public void startVideoCall(String serverConnectionId, String targetConnectionId) {
+        videoStreamService.startStreaming(serverConnectionId, targetConnectionId);
     }
 
     public void stopVideoCall() {

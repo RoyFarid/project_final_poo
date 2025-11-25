@@ -136,10 +136,10 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
             try {
                 SendFileCommand command = new SendFileCommand(
                     networkFacade,
+                    serverConnectionId,
                     connectionId,
                     file.getAbsolutePath(),
-                    currentUser.getId(),
-                    connectionId
+                    currentUser.getId()
                 );
                 commandInvoker.executeCommand(command);
                 addMessage("Yo: Archivo enviado - " + file.getName());
@@ -151,18 +151,18 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
 
     private void startVideoCall() {
         try {
-            // Extraer IP del connectionId (formato: /IP:PORT)
-            String ip = connectionId.replace("/", "").split(":")[0];
+            if (serverConnectionId == null) {
+                showAlert("Error", "No hay conexión activa con el servidor.", Alert.AlertType.ERROR);
+                return;
+            }
+
             StartVideoCallCommand command = new StartVideoCallCommand(
                 networkFacade,
-                ip,
-                8888 // Puerto UDP para video
+                serverConnectionId,
+                connectionId
             );
             commandInvoker.executeCommand(command);
-            
-            // También iniciar recepción
-            networkFacade.startReceivingVideo(8889);
-            
+
             addMessage("Videollamada iniciada");
         } catch (Exception e) {
             showAlert("Error", "No se pudo iniciar la videollamada: " + e.getMessage(), Alert.AlertType.ERROR);

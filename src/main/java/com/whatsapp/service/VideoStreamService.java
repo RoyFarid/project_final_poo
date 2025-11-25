@@ -7,12 +7,15 @@ import com.whatsapp.protocol.MessageHeader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.net.DatagramPacket;
-import java.net.DatagramSocket;
-import java.net.InetAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -22,11 +25,13 @@ public class VideoStreamService {
     private final EventAggregator eventAggregator;
     private final LogService logService;
     private final AtomicInteger frameIdGenerator;
-    private DatagramSocket udpSocket;
     private final AtomicBoolean isStreaming;
-    private static final int UDP_PORT = 8888;
-    private static final int MAX_PACKET_SIZE = 65507; // Max UDP packet size
+    private ScheduledExecutorService executorService;
+    private String currentServerConnectionId;
+    private String currentTargetConnectionId;
     private String traceId;
+    private static final byte DIRECTION_CLIENT_TO_SERVER = 0;
+    private static final byte DIRECTION_SERVER_TO_CLIENT = 1;
 
     public VideoStreamService() {
         this.connectionManager = ConnectionManager.getInstance();
@@ -37,125 +42,143 @@ public class VideoStreamService {
         this.traceId = logService.generateTraceId();
     }
 
-    public void startStreaming(String targetHost, int targetPort) throws IOException {
+    public void startStreaming(String serverConnectionId, String targetConnectionId) {
         if (isStreaming.get()) {
             throw new IllegalStateException("Ya se está transmitiendo video");
         }
-
-        udpSocket = new java.net.DatagramSocket();
+        this.currentServerConnectionId = serverConnectionId;
+        this.currentTargetConnectionId = targetConnectionId;
+        this.executorService = Executors.newSingleThreadScheduledExecutor();
         isStreaming.set(true);
 
-        // Iniciar captura y envío de frames
-        new Thread(() -> {
-            try {
-                InetAddress targetAddress = InetAddress.getByName(targetHost);
-                while (isStreaming.get()) {
-                    // Capturar frame (esto se implementaría con la cámara real)
-                    byte[] frameData = captureFrame();
-                    if (frameData != null && frameData.length > 0) {
-                        sendVideoFrame(targetAddress, targetPort, frameData);
-                    }
-                    Thread.sleep(33); // ~30 FPS
-                }
-            } catch (Exception e) {
-                logger.error("Error en streaming de video", e);
-            } finally {
-                if (udpSocket != null && !udpSocket.isClosed()) {
-                    udpSocket.close();
-                }
-            }
-        }).start();
-
+        executorService.scheduleAtFixedRate(this::sendFrameHeartbeat, 0, 300, TimeUnit.MILLISECONDS);
         logService.logInfo("Streaming de video iniciado", "VideoStreamService", traceId, null);
     }
 
-    public void startReceiving(int port) throws IOException {
-        if (isStreaming.get()) {
-            throw new IllegalStateException("Ya se está recibiendo video");
+    private void sendFrameHeartbeat() {
+        if (!isStreaming.get() || currentServerConnectionId == null || currentTargetConnectionId == null) {
+            return;
         }
 
-        udpSocket = new java.net.DatagramSocket(port);
-        isStreaming.set(true);
+        try {
+            int frameId = frameIdGenerator.incrementAndGet();
+            byte[] frameData = ("FRAME_" + frameId + "_" + System.currentTimeMillis()).getBytes(StandardCharsets.UTF_8);
 
-        new Thread(() -> {
-            byte[] buffer = new byte[MAX_PACKET_SIZE];
-            while (isStreaming.get()) {
-                try {
-                    DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
-                    udpSocket.receive(packet);
-                    
-                    byte[] frameData = new byte[packet.getLength()];
-                    System.arraycopy(packet.getData(), 0, frameData, 0, packet.getLength());
-                    
-                    // Publicar evento con frame recibido
-                    eventAggregator.publish(new NetworkEvent(
-                        NetworkEvent.EventType.VIDEO_FRAME,
-                        frameData,
-                        packet.getAddress().toString()
-                    ));
-                } catch (IOException e) {
-                    if (isStreaming.get()) {
-                        logger.error("Error recibiendo frame de video", e);
-                    }
-                }
-            }
-        }).start();
-
-        logService.logInfo("Recepción de video iniciada en puerto " + port, "VideoStreamService", traceId, null);
-    }
-
-    private void sendVideoFrame(InetAddress targetAddress, int targetPort, byte[] frameData) throws IOException {
-        int frameId = frameIdGenerator.incrementAndGet();
-        
-        // Dividir frame en paquetes si es necesario
-        int offset = 0;
-        int packetNumber = 0;
-        
-        while (offset < frameData.length) {
-            int chunkSize = Math.min(MAX_PACKET_SIZE - 20, frameData.length - offset); // -20 para header
-            byte[] chunk = new byte[chunkSize];
-            System.arraycopy(frameData, offset, chunk, 0, chunkSize);
-            
-            // Crear paquete con metadata
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            DataOutputStream dos = new DataOutputStream(baos);
-            dos.writeInt(frameId);
-            dos.writeInt(packetNumber);
-            dos.writeInt(frameData.length);
-            dos.writeInt(offset);
-            dos.write(chunk);
-            dos.flush();
-            
-            byte[] packetData = baos.toByteArray();
-            DatagramPacket packet = new DatagramPacket(
-                packetData,
-                packetData.length,
-                targetAddress,
-                targetPort
+            byte[] routedPayload = wrapPayload(DIRECTION_CLIENT_TO_SERVER, currentTargetConnectionId, frameData);
+            MessageHeader header = new MessageHeader(
+                MessageHeader.MessageType.VIDEO,
+                routedPayload.length,
+                frameId,
+                calculateChecksum(routedPayload)
             );
-            
-            udpSocket.send(packet);
-            offset += chunkSize;
-            packetNumber++;
+
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            baos.write(header.toBytes());
+            baos.write(routedPayload);
+            connectionManager.send(currentServerConnectionId, baos.toByteArray());
+        } catch (IOException e) {
+            logger.error("Error enviando frame de video", e);
         }
     }
 
-    private byte[] captureFrame() {
-        // Placeholder - esto se implementaría con la cámara real usando JavaFX MediaCapture
-        // Por ahora retornamos null
-        return null;
+    public void handleIncomingPacket(byte[] data, String source) {
+        try {
+            byte[] headerBytes = new byte[MessageHeader.HEADER_SIZE];
+            System.arraycopy(data, 0, headerBytes, 0, headerBytes.length);
+            MessageHeader header = MessageHeader.fromBytes(headerBytes);
+            if (header.getTipo() != MessageHeader.MessageType.VIDEO) {
+                return;
+            }
+
+            byte[] payload = new byte[header.getLongitud()];
+            System.arraycopy(data, MessageHeader.HEADER_SIZE, payload, 0, payload.length);
+
+            VideoFrame frame = parseFrame(payload);
+            if (frame == null) {
+                return;
+            }
+
+            if (frame.direction == DIRECTION_CLIENT_TO_SERVER && connectionManager.isServerMode()) {
+                forwardFrame(frame, source, header.getCorrelId());
+            } else if (frame.direction == DIRECTION_SERVER_TO_CLIENT && !connectionManager.isServerMode()) {
+                eventAggregator.publish(new NetworkEvent(
+                    NetworkEvent.EventType.VIDEO_FRAME,
+                    frame.payload,
+                    frame.peerId
+                ));
+            }
+        } catch (Exception e) {
+            logger.error("Error procesando paquete de video", e);
+        }
+    }
+
+    private void forwardFrame(VideoFrame frame, String originalSender, int correlId) {
+        try {
+            byte[] routedPayload = wrapPayload(DIRECTION_SERVER_TO_CLIENT, originalSender, frame.payload);
+            MessageHeader header = new MessageHeader(
+                MessageHeader.MessageType.VIDEO,
+                routedPayload.length,
+                correlId,
+                calculateChecksum(routedPayload)
+            );
+
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            baos.write(header.toBytes());
+            baos.write(routedPayload);
+            connectionManager.send(frame.peerId, baos.toByteArray());
+        } catch (IOException e) {
+            logger.error("Error reenviando frame de video", e);
+        }
     }
 
     public void stopStreaming() {
         isStreaming.set(false);
-        if (udpSocket != null && !udpSocket.isClosed()) {
-            udpSocket.close();
+        if (executorService != null) {
+            executorService.shutdownNow();
         }
         logService.logInfo("Streaming de video detenido", "VideoStreamService", traceId, null);
     }
 
-    public boolean isStreaming() {
-        return isStreaming.get();
+    private byte[] wrapPayload(byte direction, String peerId, byte[] payload) throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        DataOutputStream dos = new DataOutputStream(baos);
+        dos.writeByte(direction);
+        dos.writeUTF(peerId);
+        dos.writeInt(payload.length);
+        dos.write(payload);
+        dos.flush();
+        return baos.toByteArray();
+    }
+
+    private VideoFrame parseFrame(byte[] payload) throws IOException {
+        try (DataInputStream dis = new DataInputStream(new ByteArrayInputStream(payload))) {
+            byte direction = dis.readByte();
+            String peerId = dis.readUTF();
+            int length = dis.readInt();
+            byte[] data = new byte[length];
+            dis.readFully(data);
+            return new VideoFrame(direction, peerId, data);
+        }
+    }
+
+    private int calculateChecksum(byte[] data) {
+        int checksum = 0;
+        for (byte b : data) {
+            checksum = (checksum << 1) ^ b;
+        }
+        return checksum;
+    }
+
+    private static class VideoFrame {
+        final byte direction;
+        final String peerId;
+        final byte[] payload;
+
+        VideoFrame(byte direction, String peerId, byte[] payload) {
+            this.direction = direction;
+            this.peerId = peerId;
+            this.payload = payload;
+        }
     }
 }
 
