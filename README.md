@@ -80,6 +80,8 @@ git clone <repository-url>
 cd proyecto_final_poo
 ```
 
+Copia `db.properties.example` a `db.properties` y coloca tus credenciales de MySQL antes de compilar.
+
 2. **Compilar el proyecto**:
 ```bash
 mvn clean compile
@@ -201,7 +203,7 @@ El sistema de logging registra:
 
 ## Notas
 
-- La base de datos MySQL se configura mediante el archivo `db.properties` (ver `CONFIGURACION_MYSQL.md`)
+- Crea tu archivo `db.properties` a partir de `db.properties.example` (ver `CONFIGURACION_MYSQL.md`)
 - La base de datos y las tablas se crean automáticamente si no existen
 - El streaming de video requiere implementación adicional de captura de cámara
 - Los archivos se fragmentan en chunks de 64 KB

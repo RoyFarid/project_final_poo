@@ -19,7 +19,7 @@ O déjala que se cree automáticamente (la aplicación la creará si no existe).
 
 ### 2. Configurar Credenciales
 
-Crea un archivo `db.properties` en la raíz del proyecto con el siguiente contenido:
+Copia `db.properties.example` a `db.properties` en la raíz del proyecto y completa tus credenciales:
 
 ```properties
 db.host=localhost
@@ -28,6 +28,8 @@ db.database=whatsapp_clone
 db.username=root
 db.password=tu_contraseña
 ```
+
+El archivo `db.properties` está en `.gitignore`; cada integrante mantiene sus credenciales locales.
 
 **Nota**: Si no creas el archivo `db.properties`, la aplicación usará valores por defecto:
 - Host: localhost

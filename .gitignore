@@ -40,6 +40,9 @@ bin/
 *.ipr
 out/
 
+# Config local
+db.properties
+
 # NetBeans
 /nbproject/private/
 /nbbuild/

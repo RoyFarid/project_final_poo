@@ -1,7 +1,6 @@
-# Configuración de Base de Datos MySQL
+# Sample MySQL database configuration
 db.host=localhost
 db.port=3306
 db.database=whatsapp_clone
 db.username=root
-db.password=root
-
+db.password=change_me
