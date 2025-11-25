@@ -1,217 +1,84 @@
-# WhatsApp Clone - Proyecto Final POO
+# WhatsApp Clone
 
-Aplicación de mensajería instantánea similar a WhatsApp desarrollada en Java con JavaFX, implementando los principales patrones de diseño y principios SOLID.
+Aplicación de mensajería instantánea en Java con chat, transferencia de archivos y videollamadas.
 
-## Características Principales
+## Inicio Rápido
 
-- ✅ **Autenticación y Registro**: Sistema de usuarios con hashing de contraseñas (bcrypt)
-- ✅ **Mensajería Instantánea**: Envío y recepción de mensajes de texto sobre TCP
-- ✅ **Transferencia de Archivos**: Envío de archivos grandes con fragmentación, reanudación y selector de carpeta al recibir
-- ✅ **Videollamadas**: Streaming de video en tiempo real sobre UDP
-- ✅ **Base de Datos**: MySQL para persistencia de usuarios, logs y transferencias
-- ✅ **Logging**: Sistema de logs con correlación de trazas (traceId)
+### Primera vez
 
-## Arquitectura
+**Requisitos:** Java 17+, Maven 3.6+, MySQL 8.0+
 
-### Topología
-- **Cliente/Servidor**: El servidor acepta múltiples conexiones de clientes
-- **Protocolos**: TCP para control y archivos; UDP para video
-
-### Módulos Principales
-
-1. **AuthService**: Autenticación y registro de usuarios
-2. **ChatService**: Mensajería instantánea
-3. **FileTransferService**: Transferencia de archivos con fragmentación
-4. **VideoStreamService**: Streaming de video en tiempo real
-5. **ConnectionManager**: Gestión de conexiones TCP/UDP
-6. **LogService**: Sistema de logging con correlación
-7. **NetworkFacade**: Orquestación de servicios de red
-
-### Patrones de Diseño Implementados
-
-- ✅ **Factory Method**: `SocketFactory` para crear sockets TCP/UDP
-- ✅ **Strategy**: `RetryStrategy` (ExponentialBackoff, FixedDelay)
-- ✅ **Observer**: `EventAggregator` para notificaciones de eventos de red
-- ✅ **Command**: `Command`, `SendMessageCommand`, `SendFileCommand`, `StartVideoCallCommand`
-- ✅ **Singleton**: `ConnectionManager`, `LogService`, `EventAggregator`, `DatabaseManager`
-- ✅ **Facade**: `NetworkFacade` para orquestar servicios
-- ✅ **State**: `ConnectionState` para estados de conexión
-- ✅ **Repository**: `UsuarioRepository`, `LogRepository`, `TransferenciaRepository`
-
-### Principios SOLID
-
-- **SRP**: Cada servicio tiene una responsabilidad única
-- **DIP**: Uso de interfaces (`INetworkClient`, `IRepository`)
-- **ISP**: Interfaces específicas para cada contrato
-- **OCP**: Extensible mediante Strategy y Factory
-- **LSP**: Implementaciones respetan contratos de interfaces
-
-## Modelo de Datos
-
-### Entidades
-
-- **Usuario**: Id, Username, PasswordHash, Salt, Email, FechaCreación, ÚltimoLogin, Estado
-- **Log**: Id, Nivel, Mensaje, Módulo, Fecha, TraceId, UserId
-- **Transferencia**: Id, Tipo, Nombre, Tamaño, Checksum, Estado, Inicio, Fin, UserId, PeerIp
-
-### Protocolo de Mensajes
-
-```
-struct Header {
-  uint8 Tipo;        // 0=Chat, 1=Archivo, 2=Video, 3=Ctrl
-  uint32 Longitud;   // tamaño del payload
-  uint32 CorrelId;   // ID de correlación
-  uint32 Checksum;   // CRC32 truncado
-}
-```
-
-## Requisitos
-
-- Java 17 o superior
-- Maven 3.6+
-- JavaFX 21
-- MySQL Server 8.0+ (o MariaDB 10.3+)
-
-## Instalación y Ejecución
-
-1. **Clonar el repositorio**:
 ```bash
-git clone <repository-url>
-cd proyecto_final_poo
+# Windows
+setup.bat
+
+# Linux/macOS  
+./setup.sh
 ```
 
-Copia `db.properties.example` a `db.properties` y coloca tus credenciales de MySQL antes de compilar.
+El script configura todo automáticamente. Solo edita `db.properties` cuando se abra.
 
-2. **Compilar el proyecto**:
-```bash
-mvn clean compile
-```
+### Ya configurado
 
-3. **Ejecutar la aplicación**:
 ```bash
 mvn javafx:run
 ```
 
-O usando Java directamente:
+### Manual
+
 ```bash
-mvn clean package
-java --module-path <javafx-path> --add-modules javafx.controls,javafx.fxml,javafx.media -cp target/whatsapp-clone-1.0.0.jar com.whatsapp.Main
+cp db.properties.example db.properties  # Editar credenciales
+mvn clean install && mvn javafx:run
 ```
 
-## Uso de la Aplicación
+## Uso
 
-### 1. Login/Registro
-- En la pantalla inicial elija si se conectará como **Servidor** o **Cliente**.
-- Solo el usuario **Roy** puede autenticarse en modo servidor (es el dueño del nodo central).
-- El resto de usuarios debe ingresar al servidor remoto (modo cliente), indicando host y puerto.
-- El registro en modo cliente envía la solicitud al servidor para crear la cuenta centralizada.
+Registrarse → Elegir modo (Servidor o Cliente) → Chatear/Archivos/Video. Ver [USER_GUIDE.md](docs/USER_GUIDE.md).
 
-### 2. Modo Servidor
-- Tras iniciar sesión como Roy, seleccione "Servidor" y configure el puerto (por defecto 8080).
-- Haga clic en "Iniciar Servidor".
-- Verá:
-  - Lista de usuarios conectados (con sus alias remotos)
-  - Actividades en tiempo real (mensajes, archivos, videollamadas)
+## Características
 
-### 3. Modo Cliente
-- Ingrese las credenciales de su usuario y seleccione "Cliente".
-- Proporcione la IP/host del servidor y el puerto (8080 por defecto) y presione "Iniciar sesión".
-- La conexión se mantiene abierta; verá la lista de usuarios conectados publicada por el servidor.
-- Haga clic en un usuario para abrir una ventana de chat, compartir archivos o iniciar videollamada.
+- Chat en tiempo real
+- Transferencia de archivos con verificación de integridad
+- Videollamadas con audio
+- Autenticación segura (BCrypt)
+- Base de datos MySQL
 
-### 4. Chat
-- Escriba mensajes en el campo de texto
-- Envíe archivos con el botón "Enviar Archivo"; al completar en el receptor se abrirá un selector de carpeta para guardar el archivo recibido
-- Inicie videollamadas con el botón "Videollamada"
+## Arquitectura
 
-## Estructura del Proyecto
+Capas: UI, Servicios, Red, Datos. Patrones: Singleton, Factory, Observer, Command, Strategy, Facade, Repository. Ver [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-```
-src/main/java/com/whatsapp/
-├── Main.java                    # Punto de entrada
-├── model/                       # Modelos de datos
-│   ├── Usuario.java
-│   ├── Log.java
-│   └── Transferencia.java
-├── database/                    # Gestión de BD
-│   └── DatabaseManager.java
-├── repository/                  # Repositorios
-│   ├── IRepository.java
-│   ├── UsuarioRepository.java
-│   ├── LogRepository.java
-│   └── TransferenciaRepository.java
-├── service/                     # Servicios
-│   ├── AuthService.java
-│   ├── ChatService.java
-│   ├── FileTransferService.java
-│   ├── VideoStreamService.java
-│   ├── LogService.java
-│   └── NetworkFacade.java
-├── network/                     # Red y conexiones
-│   ├── ConnectionManager.java
-│   ├── ConnectionState.java
-│   ├── INetworkClient.java
-│   ├── factory/
-│   │   └── SocketFactory.java
-│   ├── strategy/
-│   │   ├── RetryStrategy.java
-│   │   ├── ExponentialBackoffStrategy.java
-│   │   └── FixedDelayStrategy.java
-│   └── observer/
-│       ├── NetworkEvent.java
-│       ├── NetworkEventObserver.java
-│       └── EventAggregator.java
-├── protocol/                    # Protocolos
-│   └── MessageHeader.java
-├── command/                     # Patrón Command
-│   ├── Command.java
-│   ├── SendMessageCommand.java
-│   ├── SendFileCommand.java
-│   ├── StartVideoCallCommand.java
-│   └── CommandInvoker.java
-└── ui/                          # Interfaz gráfica
-    ├── LoginView.java
-    ├── ServerView.java
-    ├── ClientView.java
-    └── ChatView.java
+## Problemas Comunes
+
+**No conecta a MySQL**
+- Verificar que MySQL esté ejecutándose
+- Revisar credenciales en `db.properties`
+
+**Puerto 5000 ocupado**
+```bash
+# Windows
+netstat -ano | findstr :5000
+taskkill /PID <PID> /F
+
+# Linux/macOS
+lsof -ti:5000 | xargs kill -9
 ```
 
-## Seguridad
+**Error de compilación**
+```bash
+mvn clean
+mvn install
+```
 
-- **Hashing de contraseñas**: bcrypt con 12 rounds
-- **Validación de entrada**: Sanitización y validación de datos
-- **Checksums**: Verificación de integridad de mensajes y archivos
-- **Límites**: Validación de tamaños de archivo y mensajes
+## Documentación
 
-## Concurrencia
+- [docs/USER_GUIDE.md](docs/USER_GUIDE.md) - Manual de usuario
+- [docs/INSTALLATION.md](docs/INSTALLATION.md) - Instalación detallada
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - Arquitectura y patrones
+- [docs/API.md](docs/API.md) - API y servicios
+- [docs/DATABASE.md](docs/DATABASE.md) - Esquema de base de datos
+- [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) - Guía de desarrollo
 
-- **Thread Pool**: Ejecutor de servicios para manejo de múltiples clientes
-- **Thread-Safe**: Uso de `ConcurrentHashMap` y `CopyOnWriteArrayList`
-- **Sincronización**: Locks finos y `synchronized` donde es necesario
-- **Backpressure**: Control de tasa de envío y buffers limitados
+## Stack
 
-## Logging
-
-El sistema de logging registra:
-- Eventos de conexión/desconexión
-- Mensajes enviados/recibidos
-- Transferencias de archivos
-- Errores y excepciones
-- Todo con correlación mediante `traceId`
-
-## Notas
-
-- Crea tu archivo `db.properties` a partir de `db.properties.example` (ver `CONFIGURACION_MYSQL.md`)
-- La base de datos y las tablas se crean automáticamente si no existen
-- El streaming de video requiere implementación adicional de captura de cámara
-- Los archivos se fragmentan en chunks de 64 KB
-- El protocolo UDP para video usa el puerto 8888 por defecto
-
-## Autor
-
-Proyecto desarrollado como trabajo final de Programación Orientada a Objetos.
-
-## Licencia
-
-Este proyecto es de uso educativo.
+Java 17, JavaFX 21, MySQL 8.2, Maven, BCrypt, SLF4J/Logback, Webcam Capture
 
