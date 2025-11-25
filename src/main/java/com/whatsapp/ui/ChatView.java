@@ -1,6 +1,9 @@
 package com.whatsapp.ui;
 
-import com.whatsapp.command.*;
+import com.whatsapp.command.CommandInvoker;
+import com.whatsapp.command.SendFileCommand;
+import com.whatsapp.command.SendMessageCommand;
+import com.whatsapp.command.StartVideoCallCommand;
 import com.whatsapp.model.Usuario;
 import com.whatsapp.network.observer.EventAggregator;
 import com.whatsapp.network.observer.NetworkEvent;
@@ -10,23 +13,28 @@ import com.whatsapp.service.NetworkFacade;
 import com.whatsapp.service.VideoStreamService;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
-import javafx.scene.control.*;
+import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.ListView;
+import javafx.scene.control.TextField;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
+import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
-import java.io.File;
 import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
-import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
 public class ChatView extends BorderPane implements NetworkEventObserver {
@@ -48,7 +56,7 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
         this.networkFacade = networkFacade;
         this.commandInvoker = new CommandInvoker();
         this.messagesList = new ListView<>();
-        
+
         EventAggregator.getInstance().subscribe(this);
         setupUI();
     }
@@ -58,17 +66,17 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
         HBox topBox = new HBox(10);
         topBox.setPadding(new Insets(10));
         topBox.setStyle("-fx-background-color: #128C7E;");
-        
+
         Label chatLabel = new Label("Chat con: " + connectionId);
         chatLabel.setStyle("-fx-text-fill: white; -fx-font-size: 14px;");
-        
+
         statusLabel = new Label("Conectado");
         statusLabel.setStyle("-fx-text-fill: white;");
-        
+
         topBox.getChildren().addAll(chatLabel, statusLabel);
         setTop(topBox);
 
-        // Panel central - Mensajes
+        // Panel central - Mensajes + video
         messagesList.setPrefHeight(350);
         messagesList.setStyle("-fx-font-size: 12px;");
 
@@ -77,7 +85,7 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
         remoteVideoView.setPreserveRatio(true);
         remoteVideoView.setStyle("-fx-border-color: #ccc; -fx-background-color: #000;");
 
-        videoStatusLabel = new Label("Video: sin se\u00f1al");
+        videoStatusLabel = new Label("Video: sin señal");
         videoStatusLabel.setStyle("-fx-text-fill: #555;");
 
         VBox videoBox = new VBox(6, new Label("Video remoto"), remoteVideoView, videoStatusLabel);
@@ -92,7 +100,6 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
         VBox bottomBox = new VBox(10);
         bottomBox.setPadding(new Insets(10));
 
-        // Campo de mensaje y botón enviar
         HBox messageBox = new HBox(10);
         messageField = new TextField();
         messageField.setPromptText("Escribe un mensaje...");
@@ -102,10 +109,8 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
         Button sendButton = new Button("Enviar");
         sendButton.setStyle("-fx-background-color: #25D366; -fx-text-fill: white;");
         sendButton.setOnAction(e -> sendMessage());
-
         messageBox.getChildren().addAll(messageField, sendButton);
 
-        // Botones de acciones
         HBox actionBox = new HBox(10);
         Button fileButton = new Button("Enviar Archivo");
         fileButton.setStyle("-fx-background-color: #128C7E; -fx-text-fill: white;");
@@ -147,7 +152,7 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
                 connectionId
             );
             commandInvoker.executeCommand(command);
-            
+
             Platform.runLater(() -> {
                 addMessage("Yo: " + message);
                 messageField.clear();
@@ -161,7 +166,7 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
         FileChooser fileChooser = new FileChooser();
         fileChooser.setTitle("Seleccionar archivo para enviar");
         File file = fileChooser.showOpenDialog((Stage) getScene().getWindow());
-        
+
         if (file != null) {
             try {
                 SendFileCommand command = new SendFileCommand(
@@ -219,17 +224,14 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
     public void onNetworkEvent(NetworkEvent event) {
         Platform.runLater(() -> {
             if (event.getType() == NetworkEvent.EventType.MESSAGE_RECEIVED) {
-                if (event.getData() instanceof ChatService.ChatMessage) {
-                    ChatService.ChatMessage msg = (ChatService.ChatMessage) event.getData();
+                if (event.getData() instanceof ChatService.ChatMessage msg) {
                     if (msg.getSource().equals(connectionId)) {
                         addMessage(connectionId + ": " + msg.getMessage());
                     }
                 }
             } else if (event.getType() == NetworkEvent.EventType.FILE_PROGRESS) {
-                if (event.getData() instanceof com.whatsapp.service.FileTransferService.FileProgress
+                if (event.getData() instanceof com.whatsapp.service.FileTransferService.FileProgress progress
                     && connectionId.equals(event.getSource())) {
-                    com.whatsapp.service.FileTransferService.FileProgress progress =
-                        (com.whatsapp.service.FileTransferService.FileProgress) event.getData();
                     if (progress.getProgress() >= 100.0) {
                         if (progress.isIncoming()) {
                             handleIncomingFile(progress);
@@ -275,6 +277,7 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
             showAlert("Error", "No se pudo detener la videollamada: " + e.getMessage(), Alert.AlertType.ERROR);
         }
     }
+
     private void handleIncomingFile(com.whatsapp.service.FileTransferService.FileProgress progress) {
         String localPath = progress.getLocalPath();
         if (localPath == null) {
@@ -282,16 +285,17 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
             return;
         }
 
-        FileChooser fileChooser = new FileChooser();
-        fileChooser.setTitle("Guardar archivo recibido");
-        fileChooser.setInitialFileName(progress.getFileName());
-        File destination = fileChooser.showSaveDialog(getScene().getWindow());
+        DirectoryChooser dirChooser = new DirectoryChooser();
+        dirChooser.setTitle("Selecciona la carpeta para guardar el archivo");
+        File selectedDir = dirChooser.showDialog(getScene().getWindow());
 
-        if (destination == null) {
+        if (selectedDir == null) {
             addMessage(connectionId + ": Archivo recibido - " + progress.getFileName()
                 + " (aún en " + localPath + ")");
             return;
         }
+
+        File destination = new File(selectedDir, progress.getFileName());
 
         try {
             Path destPath = destination.toPath();
@@ -307,4 +311,3 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
         }
     }
 }
-
