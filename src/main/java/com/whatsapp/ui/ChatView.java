@@ -258,6 +258,8 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
         } catch (Exception e) {
             videoStatusLabel.setText("Video: error al decodificar");
             videoStatusLabel.setStyle("-fx-text-fill: #dc3545;");
+        }
+    }
     private void handleIncomingFile(com.whatsapp.service.FileTransferService.FileProgress progress) {
         String localPath = progress.getLocalPath();
         if (localPath == null) {
