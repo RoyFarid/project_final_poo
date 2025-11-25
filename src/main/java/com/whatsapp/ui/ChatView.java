@@ -7,9 +7,12 @@ import com.whatsapp.network.observer.NetworkEvent;
 import com.whatsapp.network.observer.NetworkEventObserver;
 import com.whatsapp.service.ChatService;
 import com.whatsapp.service.NetworkFacade;
+import com.whatsapp.service.VideoStreamService;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.scene.control.*;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
@@ -17,6 +20,7 @@ import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
 import java.io.File;
+import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
@@ -27,6 +31,8 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
     private final NetworkFacade networkFacade;
     private final CommandInvoker commandInvoker;
     private final ListView<String> messagesList;
+    private ImageView remoteVideoView;
+    private Label videoStatusLabel;
     private TextField messageField;
     private Label statusLabel;
 
@@ -60,7 +66,22 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
         // Panel central - Mensajes
         messagesList.setPrefHeight(350);
         messagesList.setStyle("-fx-font-size: 12px;");
-        setCenter(messagesList);
+
+        remoteVideoView = new ImageView();
+        remoteVideoView.setFitWidth(260);
+        remoteVideoView.setPreserveRatio(true);
+        remoteVideoView.setStyle("-fx-border-color: #ccc; -fx-background-color: #000;");
+
+        videoStatusLabel = new Label("Video: sin se\u00f1al");
+        videoStatusLabel.setStyle("-fx-text-fill: #555;");
+
+        VBox videoBox = new VBox(6, new Label("Video remoto"), remoteVideoView, videoStatusLabel);
+        videoBox.setPadding(new Insets(5));
+        videoBox.setPrefWidth(280);
+
+        HBox centerBox = new HBox(10, messagesList, videoBox);
+        centerBox.setPadding(new Insets(0, 10, 0, 10));
+        setCenter(centerBox);
 
         // Panel inferior - Controles
         VBox bottomBox = new VBox(10);
@@ -208,8 +229,26 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
                     statusLabel.setText("Desconectado");
                     statusLabel.setStyle("-fx-text-fill: red;");
                 }
+            } else if (event.getType() == NetworkEvent.EventType.VIDEO_FRAME) {
+                if (event.getData() instanceof VideoStreamService.VideoFramePayload framePayload) {
+                    if (framePayload.getPeerId().equals(connectionId)) {
+                        showVideoFrame(framePayload.getData());
+                    }
+                }
             }
         });
+    }
+
+    private void showVideoFrame(byte[] data) {
+        try {
+            Image image = new Image(new ByteArrayInputStream(data));
+            remoteVideoView.setImage(image);
+            videoStatusLabel.setText("Video: recibiendo");
+            videoStatusLabel.setStyle("-fx-text-fill: #25D366;");
+        } catch (Exception e) {
+            videoStatusLabel.setText("Video: error al decodificar");
+            videoStatusLabel.setStyle("-fx-text-fill: #dc3545;");
+        }
     }
 }
 

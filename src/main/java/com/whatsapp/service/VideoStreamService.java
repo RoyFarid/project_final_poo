@@ -12,7 +12,11 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
+import java.awt.Rectangle;
+import java.awt.Robot;
+import java.awt.Toolkit;
+import java.awt.image.BufferedImage;
+import javax.imageio.ImageIO;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -32,6 +36,8 @@ public class VideoStreamService {
     private String traceId;
     private static final byte DIRECTION_CLIENT_TO_SERVER = 0;
     private static final byte DIRECTION_SERVER_TO_CLIENT = 1;
+    private static final int FRAME_WIDTH = 320;
+    private static final int FRAME_HEIGHT = 240;
 
     public VideoStreamService() {
         this.connectionManager = ConnectionManager.getInstance();
@@ -62,7 +68,10 @@ public class VideoStreamService {
 
         try {
             int frameId = frameIdGenerator.incrementAndGet();
-            byte[] frameData = ("FRAME_" + frameId + "_" + System.currentTimeMillis()).getBytes(StandardCharsets.UTF_8);
+            byte[] frameData = captureFrame();
+            if (frameData == null || frameData.length == 0) {
+                return;
+            }
 
             byte[] routedPayload = wrapPayload(DIRECTION_CLIENT_TO_SERVER, currentTargetConnectionId, frameData);
             MessageHeader header = new MessageHeader(
@@ -103,7 +112,7 @@ public class VideoStreamService {
             } else if (frame.direction == DIRECTION_SERVER_TO_CLIENT && !connectionManager.isServerMode()) {
                 eventAggregator.publish(new NetworkEvent(
                     NetworkEvent.EventType.VIDEO_FRAME,
-                    frame.payload,
+                    new VideoFramePayload(header.getCorrelId(), frame.peerId, frame.payload),
                     frame.peerId
                 ));
             }
@@ -137,6 +146,25 @@ public class VideoStreamService {
             executorService.shutdownNow();
         }
         logService.logInfo("Streaming de video detenido", "VideoStreamService", traceId, null);
+    }
+
+    private byte[] captureFrame() {
+        try {
+            Rectangle screenRect = new Rectangle(
+                0,
+                0,
+                Math.min(FRAME_WIDTH, (int) Toolkit.getDefaultToolkit().getScreenSize().getWidth()),
+                Math.min(FRAME_HEIGHT, (int) Toolkit.getDefaultToolkit().getScreenSize().getHeight())
+            );
+            BufferedImage image = new Robot().createScreenCapture(screenRect);
+            try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+                ImageIO.write(image, "jpg", baos);
+                return baos.toByteArray();
+            }
+        } catch (Exception e) {
+            logger.error("No se pudo capturar frame de video", e);
+            return null;
+        }
     }
 
     private byte[] wrapPayload(byte direction, String peerId, byte[] payload) throws IOException {
@@ -178,6 +206,30 @@ public class VideoStreamService {
             this.direction = direction;
             this.peerId = peerId;
             this.payload = payload;
+        }
+    }
+
+    public static class VideoFramePayload {
+        private final int frameId;
+        private final String peerId;
+        private final byte[] data;
+
+        public VideoFramePayload(int frameId, String peerId, byte[] data) {
+            this.frameId = frameId;
+            this.peerId = peerId;
+            this.data = data;
+        }
+
+        public int getFrameId() {
+            return frameId;
+        }
+
+        public String getPeerId() {
+            return peerId;
+        }
+
+        public byte[] getData() {
+            return data;
         }
     }
 }
