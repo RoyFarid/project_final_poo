@@ -26,20 +26,43 @@ import javafx.scene.text.Text;
 public class ClientView extends BorderPane implements NetworkEventObserver {
     private final NetworkFacade networkFacade;
     private final Usuario currentUser;
+<<<<<<< Updated upstream
     private final ListView<String> usersList;
     private final TextField serverHostField;
     private final TextField serverPortField;
     private Button connectButton;
     private Button disconnectButton;
+=======
+    private final ControlService controlService;
+    private final EventAggregator eventAggregator;
+    private final UserAliasRegistry aliasRegistry;
+    private final ListView<ControlService.UserDescriptor> usersList;
+    private final String connectedHost;
+    private final int connectedPort;
+    private final Label statusLabel;
+>>>>>>> Stashed changes
 
     public ClientView(Usuario currentUser) {
         this.currentUser = currentUser;
+<<<<<<< Updated upstream
         this.networkFacade = new NetworkFacade();
         this.usersList = new ListView<>();
         this.serverHostField = new TextField("localhost");
         this.serverPortField = new TextField("8080");
         
         EventAggregator.getInstance().subscribe(this);
+=======
+        this.networkFacade = networkFacade;
+        this.controlService = new ControlService();
+        this.eventAggregator = EventAggregator.getInstance();
+        this.aliasRegistry = UserAliasRegistry.getInstance();
+        this.usersList = new ListView<>();
+        this.connectedHost = serverHost;
+        this.connectedPort = serverPort;
+        this.statusLabel = new Label();
+
+        this.eventAggregator.subscribe(this);
+>>>>>>> Stashed changes
         setupUI();
     }
 
@@ -132,8 +155,14 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
     }
 
     private void disconnectFromServer() {
+<<<<<<< Updated upstream
         networkFacade.disconnectClients();
         
+=======
+        networkFacade.disconnect();
+        eventAggregator.unsubscribe(this);
+
+>>>>>>> Stashed changes
         Platform.runLater(() -> {
             connectButton.setDisable(false);
             disconnectButton.setDisable(true);

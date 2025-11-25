@@ -88,8 +88,63 @@ public class LoginView {
             }
         });
 
+<<<<<<< Updated upstream
         registerButton.setOnAction(e -> {
             showRegisterDialog();
+=======
+    private void showRemoteRegisterDialog() {
+        String host = serverHostField.getText().trim();
+        String portText = serverPortField.getText().trim();
+        if (host.isEmpty() || portText.isEmpty()) {
+            showError("Error", "Ingrese host y puerto del servidor antes de registrarse.");
+            return;
+        }
+        int port;
+        try {
+            port = Integer.parseInt(portText);
+        } catch (NumberFormatException e) {
+            showError("Error", "Puerto inválido");
+            return;
+        }
+
+        Dialog<Usuario> dialog = buildRegisterDialog("Registro (Cliente)");
+        dialog.setResultConverter(buttonType -> {
+            if (buttonType == ButtonType.OK) {
+                TextField usernameField = (TextField) dialog.getDialogPane().lookup("#reg_username");
+                PasswordField passwordField = (PasswordField) dialog.getDialogPane().lookup("#reg_password");
+                TextField emailField = (TextField) dialog.getDialogPane().lookup("#reg_email");
+                try {
+                    NetworkFacade tempFacade = new NetworkFacade();
+                    try {
+                        tempFacade.connectToServer(host, port);
+                        String connectionId = tempFacade.getPrimaryConnectionId();
+                        if (connectionId == null) {
+                            showError("Error", "No se pudo conectar al servidor.");
+                            return null;
+                        }
+                        try (RemoteAuthClient remoteAuthClient = new RemoteAuthClient()) {
+                            ControlService.OperationResultPayload result = remoteAuthClient.register(
+                                connectionId,
+                                usernameField.getText(),
+                                passwordField.getText(),
+                                emailField.getText()
+                            );
+                            if (result.isSuccess()) {
+                                showInfo("Registro exitoso", "Usuario creado en el servidor.");
+                            } else {
+                                showError("Error de registro", result.getMessage());
+                            }
+                        }
+                    } finally {
+                        tempFacade.disconnect();
+                        tempFacade.shutdown();
+                    }
+                } catch (Exception e) {
+                    showError("Error de registro", e.getMessage());
+                }
+            }
+            return null;
+>>>>>>> Stashed changes
         });
 
         vbox.getChildren().addAll(title, usernameField, passwordField, loginButton, registerButton, statusLabel);
@@ -160,5 +215,16 @@ public class LoginView {
     public Usuario getCurrentUser() {
         return currentUser;
     }
+<<<<<<< Updated upstream
+=======
+
+    private void closeFacade(NetworkFacade facade) {
+        if (facade == null) {
+            return;
+        }
+        facade.disconnect();
+        facade.shutdown();
+    }
+>>>>>>> Stashed changes
 }
 
