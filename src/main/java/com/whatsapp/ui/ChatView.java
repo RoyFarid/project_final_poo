@@ -17,6 +17,11 @@ import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
@@ -196,11 +201,16 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
                     }
                 }
             } else if (event.getType() == NetworkEvent.EventType.FILE_PROGRESS) {
-                if (event.getData() instanceof com.whatsapp.service.FileTransferService.FileProgress) {
-                    com.whatsapp.service.FileTransferService.FileProgress progress = 
+                if (event.getData() instanceof com.whatsapp.service.FileTransferService.FileProgress
+                    && connectionId.equals(event.getSource())) {
+                    com.whatsapp.service.FileTransferService.FileProgress progress =
                         (com.whatsapp.service.FileTransferService.FileProgress) event.getData();
-                    if (progress.getProgress() == 100.0) {
-                        addMessage(connectionId + ": Archivo recibido");
+                    if (progress.getProgress() >= 100.0) {
+                        if (progress.isIncoming()) {
+                            handleIncomingFile(progress);
+                        } else {
+                            addMessage("Yo: Archivo enviado - " + progress.getFileName());
+                        }
                     }
                 }
             } else if (event.getType() == NetworkEvent.EventType.DISCONNECTED) {
@@ -210,6 +220,38 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
                 }
             }
         });
+    }
+
+    private void handleIncomingFile(com.whatsapp.service.FileTransferService.FileProgress progress) {
+        String localPath = progress.getLocalPath();
+        if (localPath == null) {
+            addMessage(connectionId + ": Archivo recibido - " + progress.getFileName());
+            return;
+        }
+
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setTitle("Guardar archivo recibido");
+        fileChooser.setInitialFileName(progress.getFileName());
+        File destination = fileChooser.showSaveDialog(getScene().getWindow());
+
+        if (destination == null) {
+            addMessage(connectionId + ": Archivo recibido - " + progress.getFileName()
+                + " (aún en " + localPath + ")");
+            return;
+        }
+
+        try {
+            Path destPath = destination.toPath();
+            Path parent = destPath.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            Files.copy(Paths.get(localPath), destPath, StandardCopyOption.REPLACE_EXISTING);
+            addMessage(connectionId + ": Archivo guardado en " + destPath);
+            Files.deleteIfExists(Paths.get(localPath));
+        } catch (IOException e) {
+            showAlert("Error", "No se pudo guardar el archivo: " + e.getMessage(), Alert.AlertType.ERROR);
+        }
     }
 }
 
