@@ -20,6 +20,7 @@ public class NetworkFacade implements NetworkEventObserver {
     private final ChatService chatService;
     private final FileTransferService fileTransferService;
     private final VideoStreamService videoStreamService;
+    private final AudioStreamService audioStreamService;
     private final EventAggregator eventAggregator;
     private final LogService logService;
 
@@ -28,6 +29,7 @@ public class NetworkFacade implements NetworkEventObserver {
         this.chatService = new ChatService();
         this.fileTransferService = new FileTransferService();
         this.videoStreamService = new VideoStreamService();
+        this.audioStreamService = new AudioStreamService();
         this.eventAggregator = EventAggregator.getInstance();
         this.logService = LogService.getInstance();
         
@@ -67,6 +69,9 @@ public class NetworkFacade implements NetworkEventObserver {
                     case com.whatsapp.protocol.MessageHeader.MessageType.VIDEO:
                         videoStreamService.handleIncomingPacket(data, event.getSource());
                         break;
+                    case com.whatsapp.protocol.MessageHeader.MessageType.AUDIO:
+                        audioStreamService.handleIncomingPacket(data, event.getSource());
+                        break;
                     case com.whatsapp.protocol.MessageHeader.MessageType.CHAT:
                     default:
                         chatService.handleReceivedMessage(data, event.getSource());
@@ -94,6 +99,7 @@ public class NetworkFacade implements NetworkEventObserver {
     public void disconnectClients() {
         connectionManager.disconnectAllClients();
         videoStreamService.stopStreaming();
+        audioStreamService.stopStreaming();
     }
 
     public String getPrimaryConnectionId() {
@@ -103,6 +109,7 @@ public class NetworkFacade implements NetworkEventObserver {
     public void disconnect() {
         connectionManager.stop();
         videoStreamService.stopStreaming();
+        audioStreamService.stopStreaming();
     }
 
     // Métodos de chat
@@ -118,10 +125,20 @@ public class NetworkFacade implements NetworkEventObserver {
     // Métodos de video
     public void startVideoCall(String serverConnectionId, String targetConnectionId) {
         videoStreamService.startStreaming(serverConnectionId, targetConnectionId);
+        audioStreamService.startStreaming(serverConnectionId, targetConnectionId);
     }
 
     public void stopVideoCall() {
         videoStreamService.stopStreaming();
+        audioStreamService.stopStreaming();
+    }
+
+    public void setMicrophoneMuted(boolean muted) {
+        audioStreamService.setMicrophoneMuted(muted);
+    }
+
+    public void setSpeakerMuted(boolean muted) {
+        audioStreamService.setSpeakerMuted(muted);
     }
 
     // Métodos de información

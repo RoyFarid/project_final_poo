@@ -82,6 +82,7 @@ public class MessageHeader implements Serializable {
         public static final byte ARCHIVO = 1;
         public static final byte VIDEO = 2;
         public static final byte CONTROL = 3;
+        public static final byte AUDIO = 4;
     }
 }
 

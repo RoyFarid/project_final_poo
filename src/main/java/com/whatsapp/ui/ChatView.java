@@ -18,6 +18,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
+import javafx.scene.control.ToggleButton;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.BorderPane;
@@ -48,6 +49,8 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
     private Label videoStatusLabel;
     private TextField messageField;
     private Label statusLabel;
+    private ToggleButton muteMicButton;
+    private ToggleButton muteSpeakerButton;
 
     public ChatView(Usuario currentUser, String connectionId, String serverConnectionId, NetworkFacade networkFacade) {
         this.currentUser = currentUser;
@@ -124,7 +127,19 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
         stopVideoButton.setStyle("-fx-background-color: #dc3545; -fx-text-fill: white;");
         stopVideoButton.setOnAction(e -> stopVideoCall());
 
-        actionBox.getChildren().addAll(fileButton, videoButton, stopVideoButton);
+        muteMicButton = new ToggleButton("Silenciar micrófono");
+        muteMicButton.setOnAction(e -> toggleMicrophone());
+
+        muteSpeakerButton = new ToggleButton("Silenciar altavoz");
+        muteSpeakerButton.setOnAction(e -> toggleSpeaker());
+
+        actionBox.getChildren().addAll(
+            fileButton,
+            videoButton,
+            stopVideoButton,
+            muteMicButton,
+            muteSpeakerButton
+        );
         bottomBox.getChildren().addAll(messageBox, actionBox);
         setBottom(bottomBox);
     }
@@ -279,6 +294,30 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
             addMessage("Videollamada finalizada");
         } catch (Exception e) {
             showAlert("Error", "No se pudo detener la videollamada: " + e.getMessage(), Alert.AlertType.ERROR);
+        }
+    }
+
+    private void toggleMicrophone() {
+        boolean muted = muteMicButton.isSelected();
+        muteMicButton.setText(muted ? "Activar micrófono" : "Silenciar micrófono");
+        try {
+            networkFacade.setMicrophoneMuted(muted);
+        } catch (Exception e) {
+            showAlert("Error", "No se pudo cambiar el estado del micrófono: " + e.getMessage(), Alert.AlertType.ERROR);
+            muteMicButton.setSelected(!muted);
+            muteMicButton.setText(!muted ? "Activar micrófono" : "Silenciar micrófono");
+        }
+    }
+
+    private void toggleSpeaker() {
+        boolean muted = muteSpeakerButton.isSelected();
+        muteSpeakerButton.setText(muted ? "Activar altavoz" : "Silenciar altavoz");
+        try {
+            networkFacade.setSpeakerMuted(muted);
+        } catch (Exception e) {
+            showAlert("Error", "No se pudo cambiar el estado del altavoz: " + e.getMessage(), Alert.AlertType.ERROR);
+            muteSpeakerButton.setSelected(!muted);
+            muteSpeakerButton.setText(!muted ? "Activar altavoz" : "Silenciar altavoz");
         }
     }
 
