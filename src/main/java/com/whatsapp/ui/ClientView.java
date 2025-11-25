@@ -1,22 +1,27 @@
 package com.whatsapp.ui;
 
+import java.io.IOException;
+import java.util.Set;
+
 import com.whatsapp.model.Usuario;
-import com.whatsapp.network.ConnectionManager;
 import com.whatsapp.network.observer.EventAggregator;
 import com.whatsapp.network.observer.NetworkEvent;
 import com.whatsapp.network.observer.NetworkEventObserver;
 import com.whatsapp.service.NetworkFacade;
+
 import javafx.application.Platform;
 import javafx.geometry.Insets;
-import javafx.scene.control.*;
+import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.ListView;
+import javafx.scene.control.TextField;
+import javafx.scene.control.Tooltip;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.scene.text.Font;
 import javafx.scene.text.Text;
-
-import java.io.IOException;
-import java.util.Set;
 
 public class ClientView extends BorderPane implements NetworkEventObserver {
     private final NetworkFacade networkFacade;
@@ -55,6 +60,9 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
         Label hostLabel = new Label("Servidor:");
         hostLabel.setStyle("-fx-text-fill: white;");
         serverHostField.setPrefWidth(150);
+        serverHostField.setPromptText("IP del servidor (ej: 25.x.x.x para Hamachi)");
+        Tooltip hostTooltip = new Tooltip("Si usas Hamachi, ingresa la IP de Hamachi del servidor.\nSi estás en la misma red local, usa la IP local o 'localhost'.");
+        serverHostField.setTooltip(hostTooltip);
         
         Label portLabel = new Label("Puerto:");
         portLabel.setStyle("-fx-text-fill: white;");
@@ -135,6 +143,7 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
             serverPortField.setDisable(false);
             updateStatus("Estado: Desconectado");
             usersList.getItems().clear();
+            serverUserList.clear();
             selectedConnectionId = null;
         });
     }
@@ -167,20 +176,68 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
         Platform.runLater(() -> {
             switch (event.getType()) {
                 case CONNECTED:
-                    // Actualizar lista de usuarios conectados
-                    updateConnectedUsers();
+                    // Si el evento viene del servidor con datos JSON, es la lista de usuarios
+                    if (event.getSource().equals("SERVER") && event.getData() instanceof String) {
+                        String data = (String) event.getData();
+                        // Verificar si es JSON (lista de usuarios)
+                        if (data.startsWith("[") && data.endsWith("]")) {
+                            try {
+                                Set<String> users = com.whatsapp.service.ControlService.parseUserListJson(data);
+                                serverUserList.clear();
+                                serverUserList.addAll(users);
+                                usersList.getItems().clear();
+                                usersList.getItems().addAll(serverUserList);
+                            } catch (Exception e) {
+                                // Si no es JSON, es un ID de usuario individual
+                                String userId = data;
+                                if (!serverUserList.contains(userId)) {
+                                    serverUserList.add(userId);
+                                    usersList.getItems().clear();
+                                    usersList.getItems().addAll(serverUserList);
+                                }
+                            }
+                        } else {
+                            // Es un ID de usuario individual
+                            String userId = data;
+                            if (!serverUserList.contains(userId)) {
+                                serverUserList.add(userId);
+                                usersList.getItems().clear();
+                                usersList.getItems().addAll(serverUserList);
+                            }
+                        }
+                    } else {
+                        // Actualizar lista de usuarios conectados (método antiguo)
+                        updateConnectedUsers();
+                    }
                     break;
                 case DISCONNECTED:
-                    updateConnectedUsers();
+                    // Si el evento viene del servidor, es una desconexión
+                    if (event.getSource().equals("SERVER") && event.getData() instanceof String) {
+                        String userId = (String) event.getData();
+                        serverUserList.remove(userId);
+                        usersList.getItems().clear();
+                        usersList.getItems().addAll(serverUserList);
+                    } else {
+                        // Actualizar lista de usuarios conectados (método antiguo)
+                        updateConnectedUsers();
+                    }
                     break;
             }
         });
     }
 
     private void updateConnectedUsers() {
+        // Obtener usuarios del servidor (si está disponible)
         Set<String> connectedUsers = networkFacade.getConnectedClients();
         usersList.getItems().clear();
-        usersList.getItems().addAll(connectedUsers);
+        
+        // Si hay usuarios, agregarlos
+        if (connectedUsers != null && !connectedUsers.isEmpty()) {
+            usersList.getItems().addAll(connectedUsers);
+        }
     }
+    
+    // Almacenar la lista de usuarios recibida del servidor
+    private final java.util.Set<String> serverUserList = new java.util.HashSet<>();
 }
 

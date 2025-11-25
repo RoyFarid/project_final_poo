@@ -16,6 +16,11 @@ import javafx.scene.text.Font;
 import javafx.scene.text.Text;
 
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.util.ArrayList;
+import java.util.Enumeration;
+import java.util.List;
 
 public class ServerView extends BorderPane implements NetworkEventObserver {
     private final NetworkFacade networkFacade;
@@ -97,7 +102,13 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
         
         Label statusLabel = new Label("Estado: Desconectado");
         statusLabel.setId("statusLabel");
-        bottomPanel.getChildren().add(statusLabel);
+        
+        Label ipInfoLabel = new Label("IPs disponibles: " + getAvailableIPs());
+        ipInfoLabel.setId("ipInfoLabel");
+        ipInfoLabel.setStyle("-fx-font-size: 11px; -fx-text-fill: #666;");
+        ipInfoLabel.setWrapText(true);
+        
+        bottomPanel.getChildren().addAll(statusLabel, ipInfoLabel);
         setBottom(bottomPanel);
     }
 
@@ -113,6 +124,11 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
                 portField.setDisable(true);
                 addActivity("Servidor iniciado en puerto " + port);
                 updateStatus("Estado: Activo - Puerto " + port);
+                // Actualizar información de IPs
+                Label ipInfoLabel = (Label) lookup("#ipInfoLabel");
+                if (ipInfoLabel != null) {
+                    ipInfoLabel.setText("IPs disponibles: " + getAvailableIPs() + " | Comparte la IP de Hamachi con los clientes");
+                }
             });
         } catch (NumberFormatException e) {
             showAlert("Error", "Puerto inválido", Alert.AlertType.ERROR);
@@ -152,6 +168,34 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
         if (statusLabel != null) {
             statusLabel.setText(status);
         }
+    }
+    
+    private String getAvailableIPs() {
+        List<String> ips = new ArrayList<>();
+        try {
+            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            while (interfaces.hasMoreElements()) {
+                NetworkInterface networkInterface = interfaces.nextElement();
+                if (networkInterface.isUp() && !networkInterface.isLoopback()) {
+                    Enumeration<InetAddress> addresses = networkInterface.getInetAddresses();
+                    while (addresses.hasMoreElements()) {
+                        InetAddress address = addresses.nextElement();
+                        if (!address.isLoopbackAddress() && address.getHostAddress().indexOf(':') < 0) {
+                            String ip = address.getHostAddress();
+                            // Detectar IPs de Hamachi (generalmente empiezan con 25. o 5.)
+                            if (ip.startsWith("25.") || ip.startsWith("5.")) {
+                                ips.add(ip + " (Hamachi)");
+                            } else {
+                                ips.add(ip);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // Ignorar errores
+        }
+        return ips.isEmpty() ? "No detectadas" : String.join(", ", ips);
     }
 
     private void showAlert(String title, String message, Alert.AlertType type) {

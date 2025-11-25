@@ -1,20 +1,24 @@
 package com.whatsapp.network;
 
-import com.whatsapp.network.factory.SocketFactory;
-import com.whatsapp.network.observer.EventAggregator;
-import com.whatsapp.network.observer.NetworkEvent;
-import com.whatsapp.service.LogService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.*;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.whatsapp.network.factory.SocketFactory;
+import com.whatsapp.network.observer.EventAggregator;
+import com.whatsapp.network.observer.NetworkEvent;
+import com.whatsapp.service.LogService;
 
 public class ConnectionManager {
     private static final Logger logger = LoggerFactory.getLogger(ConnectionManager.class);
@@ -73,6 +77,30 @@ public class ConnectionManager {
                     
                     // Iniciar hilo para recibir mensajes de este cliente
                     executorService.submit(() -> handleClient(clientId, clientSocket));
+                    
+                    // Enviar lista de usuarios conectados al nuevo cliente (después de iniciar el hilo)
+                    // Usar un pequeño retraso para asegurar que el cliente esté listo
+                    final String finalClientId = clientId;
+                    executorService.submit(() -> {
+                        try {
+                            Thread.sleep(100); // Pequeño retraso para asegurar que el cliente esté listo
+                            com.whatsapp.service.ControlService controlService = new com.whatsapp.service.ControlService();
+                            controlService.sendUserList(finalClientId);
+                            // Notificar a todos los demás clientes sobre el nuevo usuario (excluyendo al nuevo)
+                            Set<String> allClients = new java.util.HashSet<>(connections.keySet());
+                            allClients.remove(finalClientId);
+                            for (String otherClientId : allClients) {
+                                try {
+                                    controlService.sendControlMessage(otherClientId, 
+                                        com.whatsapp.service.ControlService.CONTROL_USER_CONNECTED, finalClientId);
+                                } catch (Exception e) {
+                                    logger.warn("Error notificando a cliente " + otherClientId, e);
+                                }
+                            }
+                        } catch (Exception e) {
+                            logger.warn("Error enviando lista de usuarios al nuevo cliente", e);
+                        }
+                    });
                 }
             } catch (IOException e) {
                 if (isRunning.get()) {
@@ -151,6 +179,16 @@ public class ConnectionManager {
             }
             logService.logInfo("Cliente desconectado: " + connectionId, "ConnectionManager", traceId, null);
             eventAggregator.publish(new NetworkEvent(NetworkEvent.EventType.DISCONNECTED, connectionId, "SERVER"));
+            
+            // Notificar a todos los clientes sobre la desconexión
+            if (isRunning.get() && serverSocket != null) {
+                try {
+                    com.whatsapp.service.ControlService controlService = new com.whatsapp.service.ControlService();
+                    controlService.notifyUserDisconnected(connectionId);
+                } catch (Exception e) {
+                    logger.warn("Error notificando desconexión a clientes", e);
+                }
+            }
         } catch (IOException e) {
             logger.error("Error desconectando cliente", e);
         }

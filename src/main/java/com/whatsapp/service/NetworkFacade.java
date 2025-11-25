@@ -40,7 +40,28 @@ public class NetworkFacade implements NetworkEventObserver {
             public void onNetworkEvent(NetworkEvent event) {
                 if (event.getType() == NetworkEvent.EventType.MESSAGE_RECEIVED) {
                     if (event.getData() instanceof byte[]) {
-                        chatService.handleReceivedMessage((byte[]) event.getData(), event.getSource());
+                        byte[] data = (byte[]) event.getData();
+                        // Verificar si es un mensaje de control
+                        if (data.length >= com.whatsapp.protocol.MessageHeader.HEADER_SIZE) {
+                            try {
+                                byte[] headerBytes = new byte[com.whatsapp.protocol.MessageHeader.HEADER_SIZE];
+                                System.arraycopy(data, 0, headerBytes, 0, headerBytes.length);
+                                com.whatsapp.protocol.MessageHeader header = 
+                                    com.whatsapp.protocol.MessageHeader.fromBytes(headerBytes);
+                                
+                                if (header.getTipo() == com.whatsapp.protocol.MessageHeader.MessageType.CONTROL) {
+                                    // Es un mensaje de control, procesarlo
+                                    com.whatsapp.service.ControlService controlService = 
+                                        new com.whatsapp.service.ControlService();
+                                    controlService.handleControlMessage(data, event.getSource());
+                                    return;
+                                }
+                            } catch (Exception e) {
+                                logger.warn("Error verificando tipo de mensaje", e);
+                            }
+                        }
+                        // Es un mensaje de chat normal
+                        chatService.handleReceivedMessage(data, event.getSource());
                     }
                 }
             }
