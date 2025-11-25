@@ -110,12 +110,12 @@ public class FileTransferService {
                 chunkNumber++;
 
                 // Notificar progreso
-                double progress = (double) totalSent / fileSize * 100;
-                eventAggregator.publish(new NetworkEvent(
-                    NetworkEvent.EventType.FILE_PROGRESS,
-                    new FileProgress(transferId, progress, totalSent, fileSize),
-                    targetConnectionId
-                ));
+            double progress = (double) totalSent / fileSize * 100;
+            eventAggregator.publish(new NetworkEvent(
+                NetworkEvent.EventType.FILE_PROGRESS,
+                new FileProgress(transferId, fileName, progress, totalSent, fileSize, false, null),
+                targetConnectionId
+            ));
             }
 
             // Marcar como completada
@@ -302,7 +302,15 @@ public class FileTransferService {
             double progress = (double) transfer.transferred.get() / transfer.fileSize * 100;
             eventAggregator.publish(new NetworkEvent(
                 NetworkEvent.EventType.FILE_PROGRESS,
-                new FileProgress(transferId, progress, transfer.transferred.get(), transfer.fileSize),
+                new FileProgress(
+                    transferId,
+                    transfer.outputPath.getFileName().toString(),
+                    progress,
+                    transfer.transferred.get(),
+                    transfer.fileSize,
+                    true,
+                    transfer.outputPath.toString()
+                ),
                 transfer.senderId
             ));
 
@@ -437,6 +445,7 @@ public class FileTransferService {
         return checksum;
     }
 
+    @SuppressWarnings("unused")
     private static class FileTransfer {
         final int transferId;
         final Path filePath;
@@ -488,19 +497,30 @@ public class FileTransferService {
 
     public static class FileProgress {
         private final int transferId;
+        private final String fileName;
         private final double progress;
         private final long bytesTransferred;
         private final long totalBytes;
+        private final boolean incoming;
+        private final String localPath;
 
-        public FileProgress(int transferId, double progress, long bytesTransferred, long totalBytes) {
+        public FileProgress(int transferId, String fileName, double progress, long bytesTransferred,
+                            long totalBytes, boolean incoming, String localPath) {
             this.transferId = transferId;
+            this.fileName = fileName;
             this.progress = progress;
             this.bytesTransferred = bytesTransferred;
             this.totalBytes = totalBytes;
+            this.incoming = incoming;
+            this.localPath = localPath;
         }
 
         public int getTransferId() {
             return transferId;
+        }
+
+        public String getFileName() {
+            return fileName;
         }
 
         public double getProgress() {
@@ -513,6 +533,14 @@ public class FileTransferService {
 
         public long getTotalBytes() {
             return totalBytes;
+        }
+
+        public boolean isIncoming() {
+            return incoming;
+        }
+
+        public String getLocalPath() {
+            return localPath;
         }
     }
 }
