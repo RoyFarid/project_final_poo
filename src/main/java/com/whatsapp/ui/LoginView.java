@@ -172,9 +172,7 @@ public class LoginView {
 
         try {
             ServerRuntime.markAsClientProcess();
-            if (remoteNetworkFacade != null) {
-                remoteNetworkFacade.disconnectClients();
-            }
+            closeFacade(remoteNetworkFacade);
             remoteNetworkFacade = new NetworkFacade();
             remoteNetworkFacade.connectToServer(host, port);
             String serverConnectionId = remoteNetworkFacade.getPrimaryConnectionId();
@@ -192,7 +190,7 @@ public class LoginView {
                 } else {
                     statusLabel.setText(result.getMessage());
                     statusLabel.setStyle("-fx-text-fill: red;");
-                    remoteNetworkFacade.disconnectClients();
+                    closeFacade(remoteNetworkFacade);
                     remoteNetworkFacade = null;
                 }
             }
@@ -200,7 +198,7 @@ public class LoginView {
             statusLabel.setText("Error al conectarse: " + e.getMessage());
             statusLabel.setStyle("-fx-text-fill: red;");
             if (remoteNetworkFacade != null) {
-                remoteNetworkFacade.disconnectClients();
+                closeFacade(remoteNetworkFacade);
                 remoteNetworkFacade = null;
             }
         }
@@ -286,6 +284,7 @@ public class LoginView {
                         }
                     } finally {
                         tempFacade.disconnectClients();
+                        tempFacade.shutdown();
                     }
                 } catch (Exception e) {
                     showError("Error de registro", e.getMessage());
@@ -371,6 +370,17 @@ public class LoginView {
 
     public Usuario getCurrentUser() {
         return currentUser;
+    }
+
+    private void closeFacade(NetworkFacade facade) {
+        if (facade == null) {
+            return;
+        }
+        try {
+            facade.disconnectClients();
+        } catch (Exception ignored) {
+        }
+        facade.shutdown();
     }
 }
 

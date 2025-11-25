@@ -23,6 +23,7 @@ public class NetworkFacade implements NetworkEventObserver {
     private final AudioStreamService audioStreamService;
     private final EventAggregator eventAggregator;
     private final LogService logService;
+    private final NetworkEventObserver incomingObserver;
 
     public NetworkFacade() {
         this.connectionManager = ConnectionManager.getInstance();
@@ -35,9 +36,9 @@ public class NetworkFacade implements NetworkEventObserver {
         
         // Suscribirse a eventos de red
         eventAggregator.subscribe(this);
-        
+
         // Configurar listener para mensajes recibidos
-        eventAggregator.subscribe(event -> {
+        this.incomingObserver = event -> {
             if (event.getType() != NetworkEvent.EventType.MESSAGE_RECEIVED) {
                 return;
             }
@@ -80,7 +81,8 @@ public class NetworkFacade implements NetworkEventObserver {
             } catch (Exception e) {
                 logger.warn("Error procesando mensaje entrante", e);
             }
-        });
+        };
+        eventAggregator.subscribe(incomingObserver);
     }
 
     // Métodos de conexión
@@ -158,6 +160,11 @@ public class NetworkFacade implements NetworkEventObserver {
     public void onNetworkEvent(NetworkEvent event) {
         // El facade puede procesar eventos globales si es necesario
         logger.debug("NetworkFacade recibió evento: {}", event.getType());
+    }
+
+    public void shutdown() {
+        eventAggregator.unsubscribe(this);
+        eventAggregator.unsubscribe(incomingObserver);
     }
 }
 
