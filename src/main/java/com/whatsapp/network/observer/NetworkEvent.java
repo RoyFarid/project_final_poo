@@ -1,7 +1,5 @@
 package com.whatsapp.network.observer;
 
-import com.whatsapp.protocol.MessageHeader;
-
 public class NetworkEvent {
     public enum EventType {
         CONNECTED,
@@ -9,7 +7,9 @@ public class NetworkEvent {
         MESSAGE_RECEIVED,
         FILE_PROGRESS,
         VIDEO_FRAME,
-        ERROR
+        ERROR,
+        AUTH_RESULT,
+        REGISTER_RESULT
     }
 
     private final EventType type;

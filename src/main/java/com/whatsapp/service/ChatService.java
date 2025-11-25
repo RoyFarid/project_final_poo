@@ -26,7 +26,7 @@ public class ChatService {
 
     public ChatService() {
         this.connectionManager = ConnectionManager.getInstance();
-        this.transferenciaRepository = new TransferenciaRepository();
+        this.transferenciaRepository = ServerRuntime.isServerProcess() ? new TransferenciaRepository() : null;
         this.eventAggregator = EventAggregator.getInstance();
         this.logService = LogService.getInstance();
         this.correlIdGenerator = new AtomicInteger(0);
@@ -47,16 +47,18 @@ public class ChatService {
             connectionManager.send(connectionId, fullMessage);
 
             // Registrar transferencia
-            Transferencia transferencia = new Transferencia(
-                Transferencia.TipoTransferencia.TEXTO,
-                "Mensaje",
-                (long) messageBytes.length,
-                String.valueOf(checksum),
-                userId,
-                peerIp
-            );
-            transferencia.setEstado(Transferencia.EstadoTransferencia.COMPLETADA);
-            transferenciaRepository.save(transferencia);
+            if (transferenciaRepository != null) {
+                Transferencia transferencia = new Transferencia(
+                    Transferencia.TipoTransferencia.TEXTO,
+                    "Mensaje",
+                    (long) messageBytes.length,
+                    String.valueOf(checksum),
+                    userId,
+                    peerIp
+                );
+                transferencia.setEstado(Transferencia.EstadoTransferencia.COMPLETADA);
+                transferenciaRepository.save(transferencia);
+            }
 
             logService.logInfo("Mensaje enviado a " + connectionId, "ChatService", traceId, userId);
         } catch (Exception e) {

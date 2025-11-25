@@ -18,8 +18,6 @@ import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
-import javafx.scene.control.TextField;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
@@ -32,26 +30,28 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
     private final ControlService controlService;
     private final UserAliasRegistry aliasRegistry;
     private final ListView<ControlService.UserDescriptor> usersList;
-    private final TextField serverHostField;
-    private final TextField serverPortField;
-    private Button connectButton;
-    private Button disconnectButton;
+    private final String connectedHost;
+    private final int connectedPort;
+    private final Label statusLabel;
 
-    public ClientView(Usuario currentUser) {
+    public ClientView(Usuario currentUser, NetworkFacade networkFacade, String serverHost, int serverPort) {
         this.currentUser = currentUser;
-        this.networkFacade = new NetworkFacade();
+        this.networkFacade = networkFacade;
         this.controlService = new ControlService();
         this.aliasRegistry = UserAliasRegistry.getInstance();
         this.usersList = new ListView<>();
-        this.serverHostField = new TextField("localhost");
-        this.serverPortField = new TextField("8080");
-        
+        this.connectedHost = serverHost;
+        this.connectedPort = serverPort;
+        this.statusLabel = new Label();
+
         EventAggregator.getInstance().subscribe(this);
         setupUI();
+        updateStatus("Conectado a " + connectedHost + ":" + connectedPort);
+        requestUserListRefresh();
     }
 
     private void setupUI() {
-        // Panel superior - Conexión al servidor
+        // Panel superior - Información del cliente
         VBox topPanel = new VBox(10);
         topPanel.setPadding(new Insets(20));
         topPanel.setStyle("-fx-background-color: #128C7E;");
@@ -60,41 +60,22 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
         title.setFont(Font.font(20));
         title.setStyle("-fx-fill: white;");
 
-        HBox connectionBox = new HBox(10);
-        connectionBox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
-        
-        Label hostLabel = new Label("Servidor:");
-        hostLabel.setStyle("-fx-text-fill: white;");
-        serverHostField.setPrefWidth(150);
-        serverHostField.setPromptText("IP del servidor (ej: 25.x.x.x para Hamachi)");
-        Tooltip hostTooltip = new Tooltip("Si usas Hamachi, ingresa la IP de Hamachi del servidor.\nSi estás en la misma red local, usa la IP local o 'localhost'.");
-        serverHostField.setTooltip(hostTooltip);
-        
-        Label portLabel = new Label("Puerto:");
-        portLabel.setStyle("-fx-text-fill: white;");
-        serverPortField.setPrefWidth(100);
-        
-        connectButton = new Button("Conectar");
-        connectButton.setStyle("-fx-background-color: #25D366; -fx-text-fill: white;");
-        connectButton.setOnAction(e -> connectToServer());
-        
-        disconnectButton = new Button("Desconectar");
+        Button disconnectButton = new Button("Desconectar");
         disconnectButton.setStyle("-fx-background-color: #dc3545; -fx-text-fill: white;");
-        disconnectButton.setDisable(true);
         disconnectButton.setOnAction(e -> disconnectFromServer());
 
-        connectionBox.getChildren().addAll(hostLabel, serverHostField, portLabel, serverPortField, 
-                                          connectButton, disconnectButton);
-        topPanel.getChildren().addAll(title, connectionBox);
+        HBox actionBox = new HBox(10, new Label("Sesión activa en: " + connectedHost + ":" + connectedPort), disconnectButton);
+        actionBox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        topPanel.getChildren().addAll(title, actionBox);
         setTop(topPanel);
 
-        // Panel central - Lista de usuarios conectados
+        // Panel central - Lista de usuarios
         VBox centerBox = new VBox(10);
         centerBox.setPadding(new Insets(20));
 
         Label usersLabel = new Label("Usuarios Conectados (Haz click para chatear):");
         usersLabel.setFont(Font.font(14));
-        
+
         usersList.setPrefHeight(400);
         usersList.setCellFactory(list -> new javafx.scene.control.ListCell<>() {
             @Override
@@ -117,43 +98,16 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
         VBox bottomPanel = new VBox(5);
         bottomPanel.setPadding(new Insets(10));
         bottomPanel.setStyle("-fx-background-color: #f0f0f0;");
-        
-        Label statusLabel = new Label("Estado: Desconectado");
+
         statusLabel.setId("statusLabel");
         bottomPanel.getChildren().add(statusLabel);
         setBottom(bottomPanel);
     }
 
-    private void connectToServer() {
-        try {
-            String host = serverHostField.getText();
-            int port = Integer.parseInt(serverPortField.getText());
-            
-            networkFacade.connectToServer(host, port);
-            announceAliasToServer();
-            
-            Platform.runLater(() -> {
-                connectButton.setDisable(true);
-                disconnectButton.setDisable(false);
-                serverHostField.setDisable(true);
-                serverPortField.setDisable(true);
-                updateStatus("Estado: Conectado a " + host + ":" + port);
-            });
-        } catch (NumberFormatException e) {
-            showAlert("Error", "Puerto inválido", Alert.AlertType.ERROR);
-        } catch (IOException e) {
-            showAlert("Error", "No se pudo conectar al servidor: " + e.getMessage(), Alert.AlertType.ERROR);
-        }
-    }
-
     private void disconnectFromServer() {
         networkFacade.disconnectClients();
-        
+
         Platform.runLater(() -> {
-            connectButton.setDisable(false);
-            disconnectButton.setDisable(true);
-            serverHostField.setDisable(false);
-            serverPortField.setDisable(false);
             updateStatus("Estado: Desconectado");
             usersList.getItems().clear();
             serverUserMap.clear();
@@ -174,22 +128,8 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
         chatStage.show();
     }
 
-    private void announceAliasToServer() {
-        try {
-            String serverConnectionId = networkFacade.getPrimaryConnectionId();
-            if (serverConnectionId != null) {
-                controlService.sendAliasUpdate(serverConnectionId, currentUser.getUsername());
-            }
-        } catch (IOException e) {
-            showAlert("Error", "No se pudo anunciar el usuario al servidor: " + e.getMessage(), Alert.AlertType.ERROR);
-        }
-    }
-
     private void updateStatus(String status) {
-        Label statusLabel = (Label) lookup("#statusLabel");
-        if (statusLabel != null) {
-            statusLabel.setText(status);
-        }
+        statusLabel.setText(status);
     }
 
     private void showAlert(String title, String message, Alert.AlertType type) {
@@ -198,6 +138,17 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
         alert.setHeaderText(null);
         alert.setContentText(message);
         alert.showAndWait();
+    }
+
+    private void requestUserListRefresh() {
+        try {
+            String serverConnectionId = networkFacade.getPrimaryConnectionId();
+            if (serverConnectionId != null) {
+                controlService.sendAliasUpdate(serverConnectionId, currentUser.getUsername());
+            }
+        } catch (IOException e) {
+            showAlert("Error", "No se pudo sincronizar usuarios: " + e.getMessage(), Alert.AlertType.ERROR);
+        }
     }
 
     @Override

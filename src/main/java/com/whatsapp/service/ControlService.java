@@ -1,5 +1,6 @@
 package com.whatsapp.service;
 
+import com.whatsapp.model.Usuario;
 import com.whatsapp.network.ConnectionManager;
 import com.whatsapp.network.observer.EventAggregator;
 import com.whatsapp.network.observer.NetworkEvent;
@@ -10,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -31,6 +33,10 @@ public class ControlService {
     public static final byte CONTROL_USER_CONNECTED = 2;
     public static final byte CONTROL_USER_DISCONNECTED = 3;
     public static final byte CONTROL_USER_ALIAS = 4;
+    public static final byte CONTROL_AUTH_REQUEST = 5;
+    public static final byte CONTROL_AUTH_RESPONSE = 6;
+    public static final byte CONTROL_REGISTER_REQUEST = 7;
+    public static final byte CONTROL_REGISTER_RESPONSE = 8;
 
     public ControlService() {
         this.connectionManager = ConnectionManager.getInstance();
@@ -130,6 +136,16 @@ public class ControlService {
         sendControlMessage(connectionId, CONTROL_USER_ALIAS, alias);
     }
 
+    public void sendAuthRequest(String serverConnectionId, String username, String password) throws IOException {
+        String payload = encodeCredential(username) + "|" + encodeCredential(password);
+        sendControlMessage(serverConnectionId, CONTROL_AUTH_REQUEST, payload);
+    }
+
+    public void sendRegisterRequest(String serverConnectionId, String username, String password, String email) throws IOException {
+        String payload = encodeCredential(username) + "|" + encodeCredential(password) + "|" + encodeCredential(email);
+        sendControlMessage(serverConnectionId, CONTROL_REGISTER_REQUEST, payload);
+    }
+
     /**
      * Envía un mensaje de control a todos los clientes
      */
@@ -206,6 +222,32 @@ public class ControlService {
                         } else {
                             aliasRegistry.registerAlias(source, controlData);
                         }
+                        break;
+                    case CONTROL_AUTH_REQUEST:
+                        if (connectionManager.isServerMode()) {
+                            handleAuthRequest(controlData, source);
+                        }
+                        break;
+                    case CONTROL_AUTH_RESPONSE:
+                        OperationResultPayload authResult = OperationResultPayload.fromPayload(controlData);
+                        eventAggregator.publish(new NetworkEvent(
+                            NetworkEvent.EventType.AUTH_RESULT,
+                            authResult,
+                            source
+                        ));
+                        break;
+                    case CONTROL_REGISTER_REQUEST:
+                        if (connectionManager.isServerMode()) {
+                            handleRegisterRequest(controlData, source);
+                        }
+                        break;
+                    case CONTROL_REGISTER_RESPONSE:
+                        OperationResultPayload registerResult = OperationResultPayload.fromPayload(controlData);
+                        eventAggregator.publish(new NetworkEvent(
+                            NetworkEvent.EventType.REGISTER_RESULT,
+                            registerResult,
+                            source
+                        ));
                         break;
                 }
             }
@@ -301,12 +343,80 @@ public class ControlService {
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
+    private String encodeCredential(String value) {
+        return Base64.getEncoder().encodeToString(value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private String decodeCredential(String value) {
+        return new String(Base64.getDecoder().decode(value), StandardCharsets.UTF_8);
+    }
+
     private int calculateChecksum(byte[] data) {
         int checksum = 0;
         for (byte b : data) {
             checksum = (checksum << 1) ^ b;
         }
         return checksum;
+    }
+
+    private void handleAuthRequest(String payload, String source) {
+        try {
+            String[] parts = payload.split("\\|");
+            if (parts.length < 2) {
+                sendControlMessage(source, CONTROL_AUTH_RESPONSE, OperationResultPayload.error("Payload inválido").toPayload());
+                return;
+            }
+            String username = decodeCredential(parts[0]);
+            String password = decodeCredential(parts[1]);
+
+            ServerRuntime.markAsServerProcess();
+            AuthService authService = new AuthService();
+            java.util.Optional<Usuario> usuarioOpt = authService.autenticar(username, password);
+            OperationResultPayload response;
+            if (usuarioOpt.isPresent()) {
+                Usuario usuario = usuarioOpt.get();
+                aliasRegistry.registerAlias(source, usuario.getUsername());
+                broadcastUserList();
+                response = OperationResultPayload.success(usuario);
+            } else {
+                response = OperationResultPayload.error("Credenciales inválidas");
+            }
+            sendControlMessage(source, CONTROL_AUTH_RESPONSE, response.toPayload());
+        } catch (Exception e) {
+            logger.error("Error procesando autenticación remota", e);
+            try {
+                sendControlMessage(source, CONTROL_AUTH_RESPONSE, OperationResultPayload.error("Error interno").toPayload());
+            } catch (IOException ioException) {
+                logger.error("No se pudo enviar respuesta de error de autenticación", ioException);
+            }
+        }
+    }
+
+    private void handleRegisterRequest(String payload, String source) {
+        try {
+            String[] parts = payload.split("\\|");
+            if (parts.length < 3) {
+                sendControlMessage(source, CONTROL_REGISTER_RESPONSE, OperationResultPayload.error("Payload inválido").toPayload());
+                return;
+            }
+
+            String username = decodeCredential(parts[0]);
+            String password = decodeCredential(parts[1]);
+            String email = decodeCredential(parts[2]);
+
+            ServerRuntime.markAsServerProcess();
+            AuthService authService = new AuthService();
+            Usuario usuario = authService.registrar(username, password, email);
+            OperationResultPayload response = OperationResultPayload.success(usuario);
+            sendControlMessage(source, CONTROL_REGISTER_RESPONSE, response.toPayload());
+        } catch (Exception e) {
+            logger.error("Error procesando registro remoto", e);
+            try {
+                sendControlMessage(source, CONTROL_REGISTER_RESPONSE, OperationResultPayload.error(e.getMessage()).toPayload());
+            } catch (IOException ioException) {
+                logger.error("No se pudo enviar respuesta de error de registro", ioException);
+            }
+        }
     }
 
     public static class UserDescriptor {
@@ -324,6 +434,95 @@ public class ControlService {
 
         public String getDisplayName() {
             return displayName;
+        }
+    }
+
+    public static class OperationResultPayload {
+        private final boolean success;
+        private final String message;
+        private final Long userId;
+        private final String username;
+        private final String email;
+
+        private OperationResultPayload(boolean success, String message, Long userId, String username, String email) {
+            this.success = success;
+            this.message = message;
+            this.userId = userId;
+            this.username = username;
+            this.email = email;
+        }
+
+        public static OperationResultPayload success(Usuario usuario) {
+            return new OperationResultPayload(
+                true,
+                "",
+                usuario.getId(),
+                usuario.getUsername(),
+                usuario.getEmail()
+            );
+        }
+
+        public static OperationResultPayload error(String message) {
+            return new OperationResultPayload(false, message == null ? "" : message, null, null, null);
+        }
+
+        public boolean isSuccess() {
+            return success;
+        }
+
+        public String getMessage() {
+            return message;
+        }
+
+        public Long getUserId() {
+            return userId;
+        }
+
+        public String getUsername() {
+            return username;
+        }
+
+        public String getEmail() {
+            return email;
+        }
+
+        public String toPayload() {
+            String encodedMessage = encodeValue(message);
+            String encodedUsername = encodeValue(username);
+            String encodedEmail = encodeValue(email);
+            String userIdValue = userId == null ? "" : userId.toString();
+            return (success ? "OK" : "ERROR") + "|"
+                + encodedMessage + "|"
+                + userIdValue + "|"
+                + encodedUsername + "|"
+                + encodedEmail;
+        }
+
+        public static OperationResultPayload fromPayload(String payload) {
+            String[] parts = payload.split("\\|", -1);
+            if (parts.length < 5) {
+                return error("Respuesta inválida");
+            }
+            boolean success = "OK".equals(parts[0]);
+            String message = decodeValue(parts[1]);
+            Long userId = parts[2].isBlank() ? null : Long.parseLong(parts[2]);
+            String username = decodeValue(parts[3]);
+            String email = decodeValue(parts[4]);
+            return new OperationResultPayload(success, message, userId, username, email);
+        }
+
+        private static String encodeValue(String value) {
+            if (value == null) {
+                return "";
+            }
+            return Base64.getEncoder().encodeToString(value.getBytes(StandardCharsets.UTF_8));
+        }
+
+        private static String decodeValue(String value) {
+            if (value == null || value.isBlank()) {
+                return "";
+            }
+            return new String(Base64.getDecoder().decode(value), StandardCharsets.UTF_8);
         }
     }
 }

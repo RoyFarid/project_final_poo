@@ -2,13 +2,12 @@ package com.whatsapp;
 
 import com.whatsapp.model.Usuario;
 import com.whatsapp.ui.ClientView;
+import com.whatsapp.ui.LoginResult;
 import com.whatsapp.ui.LoginView;
 import com.whatsapp.ui.ServerView;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.scene.Scene;
-import javafx.scene.control.Alert;
-import javafx.scene.control.ButtonType;
 import javafx.stage.Stage;
 
 public class Main extends Application {
@@ -35,36 +34,17 @@ public class Main extends Application {
             primaryStage.show();
 
             // Configurar callback para cuando el usuario haga login exitoso
-            loginView.setOnLoginSuccess(() -> {
-                currentUser = loginView.getCurrentUser();
-                Platform.runLater(() -> showModeSelection());
+            loginView.setOnLoginSuccess(result -> {
+                currentUser = result.getUsuario();
+                if (result.getMode() == LoginResult.Mode.SERVER) {
+                    Platform.runLater(this::showServerView);
+                } else {
+                    Platform.runLater(() -> showClientView(result));
+                }
             });
         } catch (Exception e) {
             e.printStackTrace();
         }
-    }
-
-    private void showModeSelection() {
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        alert.setTitle("Seleccionar Modo");
-        alert.setHeaderText("¿Cómo desea conectarse?");
-        alert.setContentText("Seleccione su modo de operación:");
-
-        ButtonType serverButton = new ButtonType("Servidor");
-        ButtonType clientButton = new ButtonType("Cliente");
-        ButtonType cancelButton = new ButtonType("Cancelar", javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE);
-
-        alert.getButtonTypes().setAll(serverButton, clientButton, cancelButton);
-
-        alert.showAndWait().ifPresent(buttonType -> {
-            if (buttonType == serverButton) {
-                showServerView();
-            } else if (buttonType == clientButton) {
-                showClientView();
-            } else {
-                showLoginView();
-            }
-        });
     }
 
     private void showServerView() {
@@ -76,8 +56,8 @@ public class Main extends Application {
         primaryStage.show();
     }
 
-    private void showClientView() {
-        ClientView clientView = new ClientView(currentUser);
+    private void showClientView(LoginResult result) {
+        ClientView clientView = new ClientView(currentUser, result.getNetworkFacade(), result.getServerHost(), result.getServerPort());
         Scene scene = new Scene(clientView, 800, 600);
         primaryStage.setTitle("WhatsApp Clone - Cliente - " + currentUser.getUsername());
         primaryStage.setScene(scene);

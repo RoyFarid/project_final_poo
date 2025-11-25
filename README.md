@@ -101,25 +101,23 @@ java --module-path <javafx-path> --add-modules javafx.controls,javafx.fxml,javaf
 ## Uso de la Aplicación
 
 ### 1. Login/Registro
-- Al iniciar, aparecerá la pantalla de login
-- Puede registrarse creando una nueva cuenta
-- O iniciar sesión con credenciales existentes
+- En la pantalla inicial elija si se conectará como **Servidor** o **Cliente**.
+- Solo el usuario **Roy** puede autenticarse en modo servidor (es el dueño del nodo central).
+- El resto de usuarios debe ingresar al servidor remoto (modo cliente), indicando host y puerto.
+- El registro en modo cliente envía la solicitud al servidor para crear la cuenta centralizada.
 
 ### 2. Modo Servidor
-- Seleccione "Servidor" después del login
-- Configure el puerto (por defecto 8080)
-- Haga clic en "Iniciar Servidor"
+- Tras iniciar sesión como Roy, seleccione "Servidor" y configure el puerto (por defecto 8080).
+- Haga clic en "Iniciar Servidor".
 - Verá:
-  - Lista de usuarios conectados
+  - Lista de usuarios conectados (con sus alias remotos)
   - Actividades en tiempo real (mensajes, archivos, videollamadas)
 
 ### 3. Modo Cliente
-- Seleccione "Cliente" después del login
-- Ingrese la dirección del servidor (localhost por defecto)
-- Ingrese el puerto (8080 por defecto)
-- Haga clic en "Conectar"
-- Verá la lista de usuarios conectados
-- Haga clic en un usuario para abrir una ventana de chat
+- Ingrese las credenciales de su usuario y seleccione "Cliente".
+- Proporcione la IP/host del servidor y el puerto (8080 por defecto) y presione "Iniciar sesión".
+- La conexión se mantiene abierta; verá la lista de usuarios conectados publicada por el servidor.
+- Haga clic en un usuario para abrir una ventana de chat, compartir archivos o iniciar videollamada.
 
 ### 4. Chat
 - Escriba mensajes en el campo de texto

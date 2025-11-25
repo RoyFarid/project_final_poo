@@ -14,7 +14,7 @@ public class LogService {
     private static LogService instance;
 
     private LogService() {
-        this.logRepository = new LogRepository();
+        this.logRepository = ServerRuntime.isServerProcess() ? new LogRepository() : null;
     }
 
     public static synchronized LogService getInstance() {
@@ -30,7 +30,9 @@ public class LogService {
 
     public void log(Log.NivelLog nivel, String mensaje, String modulo, String traceId, Long userId) {
         Log log = new Log(nivel, mensaje, modulo, traceId, userId);
+        if (logRepository != null) {
         logRepository.save(log);
+        }
         
         // También loggear a slf4j
         switch (nivel) {
@@ -54,11 +56,11 @@ public class LogService {
     }
 
     public List<Log> getLogsByTraceId(String traceId) {
-        return logRepository.findByTraceId(traceId);
+        return logRepository == null ? java.util.Collections.emptyList() : logRepository.findByTraceId(traceId);
     }
 
     public List<Log> getAllLogs() {
-        return logRepository.findAll();
+        return logRepository == null ? java.util.Collections.emptyList() : logRepository.findAll();
     }
 }
 

@@ -38,6 +38,7 @@ public class FileTransferService {
     private final LogService logService;
     private final RetryStrategy retryStrategy;
     private final AtomicInteger correlIdGenerator;
+    private final AtomicInteger transferIdGenerator;
     private final Map<Integer, FileTransfer> activeTransfers;
     private final Map<Integer, IncomingTransfer> incomingTransfers;
     private static final byte DIRECTION_CLIENT_TO_SERVER = 0;
@@ -49,11 +50,12 @@ public class FileTransferService {
 
     public FileTransferService() {
         this.connectionManager = ConnectionManager.getInstance();
-        this.transferenciaRepository = new TransferenciaRepository();
+        this.transferenciaRepository = ServerRuntime.isServerProcess() ? new TransferenciaRepository() : null;
         this.eventAggregator = EventAggregator.getInstance();
         this.logService = LogService.getInstance();
         this.retryStrategy = new ExponentialBackoffStrategy(1000, 30000, 5);
         this.correlIdGenerator = new AtomicInteger(0);
+        this.transferIdGenerator = new AtomicInteger(0);
         this.activeTransfers = new ConcurrentHashMap<>();
         this.incomingTransfers = new ConcurrentHashMap<>();
         this.traceId = logService.generateTraceId();
@@ -70,18 +72,23 @@ public class FileTransferService {
         String checksum = calculateSHA256(path);
 
         // Crear registro de transferencia
-        Transferencia transferencia = new Transferencia(
-            Transferencia.TipoTransferencia.ARCHIVO,
-            fileName,
-            fileSize,
-            checksum,
-            userId,
-            targetConnectionId
-        );
-        transferencia.setEstado(Transferencia.EstadoTransferencia.EN_PROGRESO);
-        transferencia = transferenciaRepository.save(transferencia);
-
-        int transferId = transferencia.getId().intValue();
+        Transferencia transferencia = null;
+        int transferId;
+        if (transferenciaRepository != null) {
+            transferencia = new Transferencia(
+                Transferencia.TipoTransferencia.ARCHIVO,
+                fileName,
+                fileSize,
+                checksum,
+                userId,
+                targetConnectionId
+            );
+            transferencia.setEstado(Transferencia.EstadoTransferencia.EN_PROGRESO);
+            transferencia = transferenciaRepository.save(transferencia);
+            transferId = transferencia.getId().intValue();
+        } else {
+            transferId = transferIdGenerator.incrementAndGet();
+        }
         FileTransfer fileTransfer = new FileTransfer(transferId, path, fileSize, fileName, checksum);
         activeTransfers.put(transferId, fileTransfer);
 
@@ -118,15 +125,19 @@ public class FileTransferService {
             }
 
             // Marcar como completada
-            transferencia.setEstado(Transferencia.EstadoTransferencia.COMPLETADA);
-            transferencia.setFin(java.time.LocalDateTime.now());
-            transferenciaRepository.update(transferencia);
+            if (transferencia != null) {
+                transferencia.setEstado(Transferencia.EstadoTransferencia.COMPLETADA);
+                transferencia.setFin(java.time.LocalDateTime.now());
+                transferenciaRepository.update(transferencia);
+            }
             
             activeTransfers.remove(transferId);
             logService.logInfo("Archivo enviado: " + fileName, "FileTransferService", traceId, userId);
         } catch (IOException e) {
-            transferencia.setEstado(Transferencia.EstadoTransferencia.ERROR);
-            transferenciaRepository.update(transferencia);
+            if (transferencia != null) {
+                transferencia.setEstado(Transferencia.EstadoTransferencia.ERROR);
+                transferenciaRepository.update(transferencia);
+            }
             activeTransfers.remove(transferId);
             throw e;
         }
@@ -338,7 +349,7 @@ public class FileTransferService {
 
         // Guardar la transferencia solo si tenemos un userId (en el cliente receptor no siempre lo hay)
         Long userId = transfer.userId;
-        if (userId != null) {
+        if (userId != null && transferenciaRepository != null) {
             Transferencia transferencia = new Transferencia(
                 Transferencia.TipoTransferencia.ARCHIVO,
                 transfer.outputPath.getFileName().toString(),
@@ -352,7 +363,7 @@ public class FileTransferService {
             transferencia.setFin(LocalDateTime.now());
             transferenciaRepository.save(transferencia);
         } else {
-            logger.info("Transferencia recibida sin userId; se omite persistencia");
+            logger.info("Transferencia recibida sin userId o sin repositorio disponible; se omite persistencia");
         }
 
         if (checksumOk) {
