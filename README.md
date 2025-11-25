@@ -6,7 +6,7 @@ Aplicación de mensajería instantánea similar a WhatsApp desarrollada en Java 
 
 - ✅ **Autenticación y Registro**: Sistema de usuarios con hashing de contraseñas (bcrypt)
 - ✅ **Mensajería Instantánea**: Envío y recepción de mensajes de texto sobre TCP
-- ✅ **Transferencia de Archivos**: Envío de archivos grandes con fragmentación y reanudación
+- ✅ **Transferencia de Archivos**: Envío de archivos grandes con fragmentación, reanudación y selector de carpeta al recibir
 - ✅ **Videollamadas**: Streaming de video en tiempo real sobre UDP
 - ✅ **Base de Datos**: MySQL para persistencia de usuarios, logs y transferencias
 - ✅ **Logging**: Sistema de logs con correlación de trazas (traceId)
@@ -121,7 +121,7 @@ java --module-path <javafx-path> --add-modules javafx.controls,javafx.fxml,javaf
 
 ### 4. Chat
 - Escriba mensajes en el campo de texto
-- Envíe archivos con el botón "Enviar Archivo"
+- Envíe archivos con el botón "Enviar Archivo"; al completar en el receptor se abrirá un selector de carpeta para guardar el archivo recibido
 - Inicie videollamadas con el botón "Videollamada"
 
 ## Estructura del Proyecto
