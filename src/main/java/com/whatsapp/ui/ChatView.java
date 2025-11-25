@@ -177,7 +177,6 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
                     currentUser.getId()
                 );
                 commandInvoker.executeCommand(command);
-                addMessage("Yo: Archivo enviado - " + file.getName());
             } catch (Exception e) {
                 showAlert("Error", "No se pudo enviar el archivo: " + e.getMessage(), Alert.AlertType.ERROR);
             }
