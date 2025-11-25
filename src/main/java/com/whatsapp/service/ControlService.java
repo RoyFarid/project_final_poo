@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -23,11 +24,13 @@ public class ControlService {
     private final LogService logService;
     private final AtomicInteger correlIdGenerator;
     private String traceId;
+    private final UserAliasRegistry aliasRegistry;
     
     // Tipos de mensajes de control
     public static final byte CONTROL_USER_LIST = 1;
     public static final byte CONTROL_USER_CONNECTED = 2;
     public static final byte CONTROL_USER_DISCONNECTED = 3;
+    public static final byte CONTROL_USER_ALIAS = 4;
 
     public ControlService() {
         this.connectionManager = ConnectionManager.getInstance();
@@ -35,6 +38,7 @@ public class ControlService {
         this.logService = LogService.getInstance();
         this.correlIdGenerator = new AtomicInteger(0);
         this.traceId = logService.generateTraceId();
+        this.aliasRegistry = UserAliasRegistry.getInstance();
     }
 
     /**
@@ -42,26 +46,48 @@ public class ControlService {
      */
     public void sendUserList(String connectionId) throws IOException {
         Set<String> connectedUsers = new java.util.HashSet<>(connectionManager.getConnectedClients());
-        connectedUsers.remove(connectionId);
         logger.info("Enviando lista de usuarios a " + connectionId + ". Usuarios: " + connectedUsers);
-        String userListJson = buildUserListJson(connectedUsers);
+        String userListJson = buildUserListJson(connectedUsers, connectionId);
         logger.info("JSON generado: " + userListJson);
         sendControlMessage(connectionId, CONTROL_USER_LIST, userListJson);
         logger.info("Mensaje de control enviado exitosamente");
+    }
+
+    public void broadcastUserList() {
+        for (String clientId : connectionManager.getConnectedClients()) {
+            try {
+                sendUserList(clientId);
+            } catch (IOException e) {
+                logger.error("No se pudo enviar lista de usuarios a " + clientId, e);
+            }
+        }
+        publishUserListSnapshotForServer();
+    }
+
+    private void publishUserListSnapshotForServer() {
+        Set<String> connectedUsers = new java.util.HashSet<>(connectionManager.getConnectedClients());
+        String snapshot = buildUserListJson(connectedUsers, null);
+        eventAggregator.publish(new NetworkEvent(
+            NetworkEvent.EventType.CONNECTED,
+            snapshot,
+            "SERVER_UI"
+        ));
     }
 
     /**
      * Notifica a todos los clientes que un usuario se conectó
      */
     public void notifyUserConnected(String userId) throws IOException {
-        sendControlMessageToAll(CONTROL_USER_CONNECTED, userId);
+        sendControlMessageToAll(CONTROL_USER_CONNECTED, formatUserEntry(userId));
     }
 
     /**
      * Notifica a todos los clientes que un usuario se desconectó
      */
     public void notifyUserDisconnected(String userId) throws IOException {
+        aliasRegistry.removeAlias(userId);
         sendControlMessageToAll(CONTROL_USER_DISCONNECTED, userId);
+        broadcastUserList();
     }
 
     /**
@@ -95,6 +121,13 @@ public class ControlService {
             logger.error("Error enviando mensaje de control", e);
             throw new IOException("Error enviando mensaje de control", e);
         }
+    }
+
+    public void sendAliasUpdate(String connectionId, String alias) throws IOException {
+        if (connectionId == null || alias == null || alias.isBlank()) {
+            return;
+        }
+        sendControlMessage(connectionId, CONTROL_USER_ALIAS, alias);
     }
 
     /**
@@ -166,6 +199,14 @@ public class ControlService {
                             "SERVER"
                         ));
                         break;
+                    case CONTROL_USER_ALIAS:
+                        if (connectionManager.isServerMode()) {
+                            aliasRegistry.registerAlias(source, controlData);
+                            broadcastUserList();
+                        } else {
+                            aliasRegistry.registerAlias(source, controlData);
+                        }
+                        break;
                 }
             }
         } catch (Exception e) {
@@ -176,15 +217,26 @@ public class ControlService {
     /**
      * Construye un JSON simple con la lista de usuarios
      */
-    private String buildUserListJson(Set<String> users) {
+    private String buildUserListJson(Set<String> users, String excludeConnectionId) {
         StringBuilder json = new StringBuilder();
         json.append("[");
         boolean first = true;
         for (String user : users) {
+            if (excludeConnectionId != null && excludeConnectionId.equals(user)) {
+                continue;
+            }
+            String alias = aliasRegistry.getAliasOrDefault(user);
+            if (alias == null || alias.equals(user)) {
+                continue;
+            }
             if (!first) {
                 json.append(",");
             }
-            json.append("\"").append(user).append("\"");
+            json.append("\"")
+                .append(escapeJson(user))
+                .append("::")
+                .append(escapeJson(alias))
+                .append("\"");
             first = false;
         }
         json.append("]");
@@ -194,21 +246,59 @@ public class ControlService {
     /**
      * Parsea el JSON de la lista de usuarios
      */
-    public static Set<String> parseUserListJson(String json) {
-        java.util.Set<String> users = new java.util.HashSet<>();
-        // Parseo simple: ["user1","user2"] -> ["user1", "user2"]
+    public static Set<UserDescriptor> parseUserListJson(String json) {
+        Set<UserDescriptor> users = new LinkedHashSet<>();
         json = json.trim();
-        if (json.startsWith("[") && json.endsWith("]")) {
-            json = json.substring(1, json.length() - 1);
-            String[] parts = json.split(",");
-            for (String part : parts) {
-                part = part.trim();
-                if (part.startsWith("\"") && part.endsWith("\"")) {
-                    users.add(part.substring(1, part.length() - 1));
-                }
+        if (json.length() < 2 || !json.startsWith("[") || !json.endsWith("]")) {
+            return users;
+        }
+
+        String body = json.substring(1, json.length() - 1).trim();
+        if (body.isEmpty()) {
+            return users;
+        }
+
+        String[] entries = body.split("\",\"");
+        for (String entry : entries) {
+            String cleaned = entry.replace("\"", "");
+            UserDescriptor descriptor = parseUserDescriptor(cleaned);
+            if (descriptor != null) {
+                users.add(descriptor);
             }
         }
         return users;
+    }
+
+    public static UserDescriptor parseUserDescriptor(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String[] pieces = raw.split("::", 2);
+        if (pieces.length != 2) {
+            return null;
+        }
+        String connectionId = pieces[0];
+        String displayName = pieces[1];
+        if (connectionId.isBlank() || displayName.isBlank()) {
+            return null;
+        }
+        return new UserDescriptor(connectionId, displayName);
+    }
+
+    private String formatUserEntry(String connectionId) {
+        String alias = aliasRegistry.getAliasOrDefault(connectionId);
+        if (alias == null || alias.equals(connectionId)) {
+            return connectionId;
+        }
+        return formatUserEntry(connectionId, alias);
+    }
+
+    private String formatUserEntry(String connectionId, String alias) {
+        return connectionId + "::" + alias;
+    }
+
+    private String escapeJson(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private int calculateChecksum(byte[] data) {
@@ -217,6 +307,24 @@ public class ControlService {
             checksum = (checksum << 1) ^ b;
         }
         return checksum;
+    }
+
+    public static class UserDescriptor {
+        private final String connectionId;
+        private final String displayName;
+
+        public UserDescriptor(String connectionId, String displayName) {
+            this.connectionId = connectionId;
+            this.displayName = displayName;
+        }
+
+        public String getConnectionId() {
+            return connectionId;
+        }
+
+        public String getDisplayName() {
+            return displayName;
+        }
     }
 }
 

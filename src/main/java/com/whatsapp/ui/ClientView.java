@@ -1,13 +1,16 @@
 package com.whatsapp.ui;
 
 import java.io.IOException;
-import java.util.Set;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import com.whatsapp.model.Usuario;
 import com.whatsapp.network.observer.EventAggregator;
 import com.whatsapp.network.observer.NetworkEvent;
 import com.whatsapp.network.observer.NetworkEventObserver;
+import com.whatsapp.service.ControlService;
 import com.whatsapp.service.NetworkFacade;
+import com.whatsapp.service.UserAliasRegistry;
 
 import javafx.application.Platform;
 import javafx.geometry.Insets;
@@ -26,7 +29,9 @@ import javafx.scene.text.Text;
 public class ClientView extends BorderPane implements NetworkEventObserver {
     private final NetworkFacade networkFacade;
     private final Usuario currentUser;
-    private final ListView<String> usersList;
+    private final ControlService controlService;
+    private final UserAliasRegistry aliasRegistry;
+    private final ListView<ControlService.UserDescriptor> usersList;
     private final TextField serverHostField;
     private final TextField serverPortField;
     private Button connectButton;
@@ -35,6 +40,8 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
     public ClientView(Usuario currentUser) {
         this.currentUser = currentUser;
         this.networkFacade = new NetworkFacade();
+        this.controlService = new ControlService();
+        this.aliasRegistry = UserAliasRegistry.getInstance();
         this.usersList = new ListView<>();
         this.serverHostField = new TextField("localhost");
         this.serverPortField = new TextField("8080");
@@ -89,10 +96,17 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
         usersLabel.setFont(Font.font(14));
         
         usersList.setPrefHeight(400);
+        usersList.setCellFactory(list -> new javafx.scene.control.ListCell<>() {
+            @Override
+            protected void updateItem(ControlService.UserDescriptor item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty || item == null ? null : item.getDisplayName());
+            }
+        });
         usersList.setOnMouseClicked(e -> {
-            String selected = usersList.getSelectionModel().getSelectedItem();
+            ControlService.UserDescriptor selected = usersList.getSelectionModel().getSelectedItem();
             if (selected != null) {
-                openChatWindow(selected);
+                openChatWindow(selected.getConnectionId(), selected.getDisplayName());
             }
         });
 
@@ -116,6 +130,7 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
             int port = Integer.parseInt(serverPortField.getText());
             
             networkFacade.connectToServer(host, port);
+            announceAliasToServer();
             
             Platform.runLater(() -> {
                 connectButton.setDisable(true);
@@ -141,11 +156,11 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
             serverPortField.setDisable(false);
             updateStatus("Estado: Desconectado");
             usersList.getItems().clear();
-            serverUserList.clear();
+            serverUserMap.clear();
         });
     }
 
-    private void openChatWindow(String connectionId) {
+    private void openChatWindow(String connectionId, String displayName) {
         String serverConnectionId = networkFacade.getPrimaryConnectionId();
         if (serverConnectionId == null) {
             showAlert("Error", "No hay conexión activa con el servidor.", Alert.AlertType.ERROR);
@@ -154,9 +169,20 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
 
         ChatView chatView = new ChatView(currentUser, connectionId, serverConnectionId, networkFacade);
         javafx.stage.Stage chatStage = new javafx.stage.Stage();
-        chatStage.setTitle("Chat con " + connectionId);
+        chatStage.setTitle("Chat con " + displayName);
         chatStage.setScene(new javafx.scene.Scene(chatView, 600, 500));
         chatStage.show();
+    }
+
+    private void announceAliasToServer() {
+        try {
+            String serverConnectionId = networkFacade.getPrimaryConnectionId();
+            if (serverConnectionId != null) {
+                controlService.sendAliasUpdate(serverConnectionId, currentUser.getUsername());
+            }
+        } catch (IOException e) {
+            showAlert("Error", "No se pudo anunciar el usuario al servidor: " + e.getMessage(), Alert.AlertType.ERROR);
+        }
     }
 
     private void updateStatus(String status) {
@@ -177,17 +203,20 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
     @Override
     public void onNetworkEvent(NetworkEvent event) {
         Platform.runLater(() -> {
-            if (!"SERVER".equals(event.getSource()) || !(event.getData() instanceof String)) {
+            if (!(event.getData() instanceof String)) {
                 return;
             }
 
             String payload = (String) event.getData();
             switch (event.getType()) {
                 case CONNECTED:
-                    handleServerConnectedPayload(payload);
+                    if ("SERVER".equals(event.getSource())) {
+                        handleServerConnectedPayload(payload);
+                    }
                     break;
                 case DISCONNECTED:
-                    serverUserList.remove(payload);
+                    serverUserMap.remove(payload);
+                    aliasRegistry.removeAlias(payload);
                     refreshUsersList();
                     break;
                 default:
@@ -199,9 +228,12 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
     private void handleServerConnectedPayload(String data) {
         if (data.startsWith("[") && data.endsWith("]")) {
             try {
-                Set<String> users = com.whatsapp.service.ControlService.parseUserListJson(data);
-                serverUserList.clear();
-                serverUserList.addAll(users);
+                var users = ControlService.parseUserListJson(data);
+                serverUserMap.clear();
+                for (ControlService.UserDescriptor descriptor : users) {
+                    serverUserMap.put(descriptor.getConnectionId(), descriptor);
+                    aliasRegistry.registerAlias(descriptor.getConnectionId(), descriptor.getDisplayName());
+                }
                 refreshUsersList();
                 return;
             } catch (Exception ignored) {
@@ -209,16 +241,20 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
             }
         }
 
-        if (serverUserList.add(data)) {
-            refreshUsersList();
+        ControlService.UserDescriptor descriptor = ControlService.parseUserDescriptor(data);
+        if (descriptor != null) {
+            if (!descriptor.getConnectionId().equals(descriptor.getDisplayName())) {
+                serverUserMap.put(descriptor.getConnectionId(), descriptor);
+                aliasRegistry.registerAlias(descriptor.getConnectionId(), descriptor.getDisplayName());
+                refreshUsersList();
+            }
         }
     }
 
     private void refreshUsersList() {
-        usersList.getItems().setAll(serverUserList);
+        usersList.getItems().setAll(serverUserMap.values());
     }
 
-    // Almacenar la lista de usuarios recibida del servidor
-    private final java.util.Set<String> serverUserList = new java.util.HashSet<>();
+    private final Map<String, ControlService.UserDescriptor> serverUserMap = new LinkedHashMap<>();
 }
 

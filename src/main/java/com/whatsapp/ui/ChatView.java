@@ -10,6 +10,7 @@ import com.whatsapp.network.observer.NetworkEvent;
 import com.whatsapp.network.observer.NetworkEventObserver;
 import com.whatsapp.service.ChatService;
 import com.whatsapp.service.NetworkFacade;
+import com.whatsapp.service.UserAliasRegistry;
 import com.whatsapp.service.VideoStreamService;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
@@ -51,6 +52,7 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
     private Label statusLabel;
     private ToggleButton muteMicButton;
     private ToggleButton muteSpeakerButton;
+    private final UserAliasRegistry aliasRegistry;
 
     public ChatView(Usuario currentUser, String connectionId, String serverConnectionId, NetworkFacade networkFacade) {
         this.currentUser = currentUser;
@@ -59,6 +61,7 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
         this.networkFacade = networkFacade;
         this.commandInvoker = new CommandInvoker();
         this.messagesList = new ListView<>();
+        this.aliasRegistry = UserAliasRegistry.getInstance();
 
         EventAggregator.getInstance().subscribe(this);
         setupUI();
@@ -70,7 +73,7 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
         topBox.setPadding(new Insets(10));
         topBox.setStyle("-fx-background-color: #128C7E;");
 
-        Label chatLabel = new Label("Chat con: " + connectionId);
+        Label chatLabel = new Label("Chat con: " + getPeerDisplayName());
         chatLabel.setStyle("-fx-text-fill: white; -fx-font-size: 14px;");
 
         statusLabel = new Label("Conectado");
@@ -241,7 +244,7 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
                 case MESSAGE_RECEIVED -> {
                     if (event.getData() instanceof ChatService.ChatMessage msg
                         && msg.getSource().equals(connectionId)) {
-                        addMessage(connectionId + ": " + msg.getMessage());
+                        addMessage(getPeerDisplayName() + ": " + msg.getMessage());
                     }
                 }
                 case FILE_PROGRESS -> {
@@ -324,7 +327,7 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
     private void handleIncomingFile(com.whatsapp.service.FileTransferService.FileProgress progress) {
         String localPath = progress.getLocalPath();
         if (localPath == null) {
-            addMessage(connectionId + ": Archivo recibido - " + progress.getFileName());
+            addMessage(getPeerDisplayName() + ": Archivo recibido - " + progress.getFileName());
             return;
         }
 
@@ -333,7 +336,7 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
         File selectedDir = dirChooser.showDialog(getScene().getWindow());
 
         if (selectedDir == null) {
-            addMessage(connectionId + ": Archivo recibido - " + progress.getFileName()
+            addMessage(getPeerDisplayName() + ": Archivo recibido - " + progress.getFileName()
                 + " (aún en " + localPath + ")");
             return;
         }
@@ -347,10 +350,14 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
                 Files.createDirectories(parent);
             }
             Files.copy(Paths.get(localPath), destPath, StandardCopyOption.REPLACE_EXISTING);
-            addMessage(connectionId + ": Archivo guardado en " + destPath);
+            addMessage(getPeerDisplayName() + ": Archivo guardado en " + destPath);
             Files.deleteIfExists(Paths.get(localPath));
         } catch (IOException e) {
             showAlert("Error", "No se pudo guardar el archivo: " + e.getMessage(), Alert.AlertType.ERROR);
         }
+    }
+
+    private String getPeerDisplayName() {
+        return aliasRegistry.getAliasOrDefault(connectionId);
     }
 }

@@ -4,8 +4,9 @@ import com.whatsapp.model.Usuario;
 import com.whatsapp.network.observer.EventAggregator;
 import com.whatsapp.network.observer.NetworkEvent;
 import com.whatsapp.network.observer.NetworkEventObserver;
+import com.whatsapp.service.ControlService;
 import com.whatsapp.service.NetworkFacade;
-import com.whatsapp.service.LogService;
+import com.whatsapp.service.UserAliasRegistry;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.scene.control.*;
@@ -19,27 +20,29 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.Enumeration;
 import java.util.List;
+import java.util.Map;
 
 public class ServerView extends BorderPane implements NetworkEventObserver {
     private final NetworkFacade networkFacade;
     private final Usuario currentUser;
-    private final LogService logService;
     private final ListView<String> activityList;
     private final ListView<String> connectedUsersList;
     private final TextField portField;
     private Button startServerButton;
     private Button stopServerButton;
-    private boolean serverStarted = false;
+    private final UserAliasRegistry aliasRegistry;
+    private final Map<String, String> connectedUserMap = new LinkedHashMap<>();
 
     public ServerView(Usuario currentUser) {
         this.currentUser = currentUser;
         this.networkFacade = new NetworkFacade();
-        this.logService = LogService.getInstance();
         this.activityList = new ListView<>();
         this.connectedUsersList = new ListView<>();
         this.portField = new TextField("8080");
+        this.aliasRegistry = UserAliasRegistry.getInstance();
         
         EventAggregator.getInstance().subscribe(this);
         setupUI();
@@ -116,7 +119,6 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
         try {
             int port = Integer.parseInt(portField.getText());
             networkFacade.startServer(port);
-            serverStarted = true;
             
             Platform.runLater(() -> {
                 startServerButton.setDisable(true);
@@ -139,7 +141,6 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
 
     private void stopServer() {
         networkFacade.disconnect();
-        serverStarted = false;
         
         Platform.runLater(() -> {
             startServerButton.setDisable(false);
@@ -148,6 +149,7 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
             addActivity("Servidor detenido");
             updateStatus("Estado: Desconectado");
             connectedUsersList.getItems().clear();
+            connectedUserMap.clear();
         });
     }
 
@@ -211,23 +213,32 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
         Platform.runLater(() -> {
             switch (event.getType()) {
                 case CONNECTED:
+                    if ("SERVER_UI".equals(event.getSource())) {
+                        handleAliasSnapshot(event.getData().toString());
+                        break;
+                    }
                     String clientId = event.getData().toString();
-                    // Filtrar el evento "Servidor iniciado" - no es un cliente
-                    if (!clientId.equals("Servidor iniciado") && !connectedUsersList.getItems().contains(clientId)) {
-                        connectedUsersList.getItems().add(clientId);
-                        addActivity("Usuario conectado: " + clientId);
+                    if (!"Servidor iniciado".equals(clientId)) {
+                        String displayName = aliasRegistry.getAliasOrDefault(clientId);
+                        if (!displayName.equals(clientId)) {
+                            connectedUserMap.put(clientId, displayName);
+                            refreshConnectedUsersList();
+                            addActivity("Usuario conectado: " + displayName);
+                        }
                     }
                     break;
                 case DISCONNECTED:
                     String disconnectedId = event.getData().toString();
-                    connectedUsersList.getItems().remove(disconnectedId);
-                    addActivity("Usuario desconectado: " + disconnectedId);
+                    connectedUserMap.remove(disconnectedId);
+                    aliasRegistry.removeAlias(disconnectedId);
+                    refreshConnectedUsersList();
+                    addActivity("Usuario desconectado: " + resolveDisplayName(disconnectedId));
                     break;
                 case MESSAGE_RECEIVED:
                     if (event.getData() instanceof com.whatsapp.service.ChatService.ChatMessage) {
                         com.whatsapp.service.ChatService.ChatMessage msg = 
                             (com.whatsapp.service.ChatService.ChatMessage) event.getData();
-                        addActivity(msg.getSource() + ": Envió mensaje");
+                        addActivity(resolveDisplayName(msg.getSource()) + ": Envió mensaje");
                     }
                     break;
                 case FILE_PROGRESS:
@@ -235,15 +246,37 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
                         com.whatsapp.service.FileTransferService.FileProgress progress = 
                             (com.whatsapp.service.FileTransferService.FileProgress) event.getData();
                         if (progress.getProgress() == 100.0) {
-                            addActivity(event.getSource() + ": Archivo transferido completado");
+                            addActivity(resolveDisplayName(event.getSource()) + ": Archivo transferido completado");
                         }
                     }
                     break;
                 case VIDEO_FRAME:
-                    addActivity(event.getSource() + ": Videollamada activa");
+                    addActivity(resolveDisplayName(event.getSource()) + ": Videollamada activa");
+                    break;
+                default:
                     break;
             }
         });
+    }
+
+    private void handleAliasSnapshot(String data) {
+        if (!data.startsWith("[") || !data.endsWith("]")) {
+            return;
+        }
+        connectedUserMap.clear();
+        for (ControlService.UserDescriptor descriptor : ControlService.parseUserListJson(data)) {
+            connectedUserMap.put(descriptor.getConnectionId(), descriptor.getDisplayName());
+            aliasRegistry.registerAlias(descriptor.getConnectionId(), descriptor.getDisplayName());
+        }
+        refreshConnectedUsersList();
+    }
+
+    private void refreshConnectedUsersList() {
+        connectedUsersList.getItems().setAll(connectedUserMap.values());
+    }
+
+    private String resolveDisplayName(String connectionId) {
+        return aliasRegistry.getAliasOrDefault(connectionId);
     }
 }
 
