@@ -79,7 +79,11 @@ public class TransferenciaRepository implements IRepository<Transferencia, Long>
             pstmt.setString(4, transferencia.getChecksum());
             pstmt.setString(5, transferencia.getEstado().name());
             pstmt.setTimestamp(6, java.sql.Timestamp.valueOf(transferencia.getInicio()));
-            pstmt.setLong(7, transferencia.getUserId());
+            if (transferencia.getUserId() == null) {
+                pstmt.setNull(7, Types.INTEGER);
+            } else {
+                pstmt.setLong(7, transferencia.getUserId());
+            }
             pstmt.setString(8, transferencia.getPeerIp());
             pstmt.executeUpdate();
             
@@ -119,7 +123,11 @@ public class TransferenciaRepository implements IRepository<Transferencia, Long>
             pstmt.setString(5, transferencia.getEstado().name());
             pstmt.setTimestamp(6, java.sql.Timestamp.valueOf(transferencia.getInicio()));
             pstmt.setTimestamp(7, transferencia.getFin() != null ? java.sql.Timestamp.valueOf(transferencia.getFin()) : null);
-            pstmt.setLong(8, transferencia.getUserId());
+            if (transferencia.getUserId() == null) {
+                pstmt.setNull(8, Types.INTEGER);
+            } else {
+                pstmt.setLong(8, transferencia.getUserId());
+            }
             pstmt.setString(9, transferencia.getPeerIp());
             pstmt.setLong(10, transferencia.getId());
             pstmt.executeUpdate();
