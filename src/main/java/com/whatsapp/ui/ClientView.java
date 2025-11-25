@@ -179,15 +179,20 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
                     // Si el evento viene del servidor con datos JSON, es la lista de usuarios
                     if (event.getSource().equals("SERVER") && event.getData() instanceof String) {
                         String data = (String) event.getData();
+                        System.out.println("Cliente recibió evento CONNECTED del servidor: " + data);
                         // Verificar si es JSON (lista de usuarios)
                         if (data.startsWith("[") && data.endsWith("]")) {
                             try {
                                 Set<String> users = com.whatsapp.service.ControlService.parseUserListJson(data);
+                                System.out.println("Parseó lista de usuarios: " + users);
                                 serverUserList.clear();
                                 serverUserList.addAll(users);
                                 usersList.getItems().clear();
                                 usersList.getItems().addAll(serverUserList);
+                                System.out.println("Lista actualizada en UI: " + usersList.getItems());
                             } catch (Exception e) {
+                                System.err.println("Error parseando JSON de usuarios: " + e.getMessage());
+                                e.printStackTrace();
                                 // Si no es JSON, es un ID de usuario individual
                                 String userId = data;
                                 if (!serverUserList.contains(userId)) {
@@ -199,6 +204,7 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
                         } else {
                             // Es un ID de usuario individual
                             String userId = data;
+                            System.out.println("Agregando usuario individual: " + userId);
                             if (!serverUserList.contains(userId)) {
                                 serverUserList.add(userId);
                                 usersList.getItems().clear();

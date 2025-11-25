@@ -83,14 +83,17 @@ public class ConnectionManager {
                     final String finalClientId = clientId;
                     executorService.submit(() -> {
                         try {
-                            Thread.sleep(100); // Pequeño retraso para asegurar que el cliente esté listo
+                            Thread.sleep(200); // Aumentar retraso para asegurar que el cliente esté listo
                             com.whatsapp.service.ControlService controlService = new com.whatsapp.service.ControlService();
+                            Set<String> allClients = new java.util.HashSet<>(connections.keySet());
+                            logger.info("Enviando lista de usuarios a " + finalClientId + ": " + allClients);
                             controlService.sendUserList(finalClientId);
                             // Notificar a todos los demás clientes sobre el nuevo usuario (excluyendo al nuevo)
-                            Set<String> allClients = new java.util.HashSet<>(connections.keySet());
-                            allClients.remove(finalClientId);
-                            for (String otherClientId : allClients) {
+                            Set<String> otherClients = new java.util.HashSet<>(allClients);
+                            otherClients.remove(finalClientId);
+                            for (String otherClientId : otherClients) {
                                 try {
+                                    logger.info("Notificando a " + otherClientId + " sobre nuevo usuario: " + finalClientId);
                                     controlService.sendControlMessage(otherClientId, 
                                         com.whatsapp.service.ControlService.CONTROL_USER_CONNECTED, finalClientId);
                                 } catch (Exception e) {
@@ -98,7 +101,7 @@ public class ConnectionManager {
                                 }
                             }
                         } catch (Exception e) {
-                            logger.warn("Error enviando lista de usuarios al nuevo cliente", e);
+                            logger.error("Error enviando lista de usuarios al nuevo cliente", e);
                         }
                     });
                 }

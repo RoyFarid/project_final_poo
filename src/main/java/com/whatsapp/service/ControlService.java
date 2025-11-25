@@ -136,12 +136,13 @@ public class ControlService {
                 switch (controlType) {
                     case CONTROL_USER_LIST:
                         // Publicar evento con la lista de usuarios
+                        logger.info("Lista de usuarios recibida: " + controlData);
                         eventAggregator.publish(new NetworkEvent(
                             NetworkEvent.EventType.CONNECTED,
                             controlData, // JSON con la lista de usuarios
                             "SERVER"
                         ));
-                        logService.logInfo("Lista de usuarios recibida", "ControlService", traceId, null);
+                        logService.logInfo("Lista de usuarios recibida: " + controlData, "ControlService", traceId, null);
                         break;
                     case CONTROL_USER_CONNECTED:
                         eventAggregator.publish(new NetworkEvent(
