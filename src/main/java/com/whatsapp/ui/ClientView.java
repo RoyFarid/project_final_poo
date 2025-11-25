@@ -146,7 +146,13 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
     }
 
     private void openChatWindow(String connectionId) {
-        ChatView chatView = new ChatView(currentUser, connectionId, networkFacade);
+        String serverConnectionId = networkFacade.getPrimaryConnectionId();
+        if (serverConnectionId == null) {
+            showAlert("Error", "No hay conexión activa con el servidor.", Alert.AlertType.ERROR);
+            return;
+        }
+
+        ChatView chatView = new ChatView(currentUser, connectionId, serverConnectionId, networkFacade);
         javafx.stage.Stage chatStage = new javafx.stage.Stage();
         chatStage.setTitle("Chat con " + connectionId);
         chatStage.setScene(new javafx.scene.Scene(chatView, 600, 500));

@@ -87,6 +87,10 @@ public class NetworkFacade implements NetworkEventObserver {
         videoStreamService.stopStreaming();
     }
 
+    public String getPrimaryConnectionId() {
+        return connectionManager.getPrimaryConnectionId();
+    }
+
     public void disconnect() {
         connectionManager.stop();
         videoStreamService.stopStreaming();

@@ -11,8 +11,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.ObjectOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class ChatService {
@@ -40,18 +40,8 @@ public class ChatService {
             byte[] messageBytes = message.getBytes(StandardCharsets.UTF_8);
             int checksum = calculateChecksum(messageBytes);
             
-            MessageHeader header = new MessageHeader(
-                MessageHeader.MessageType.CHAT,
-                messageBytes.length,
-                correlId,
-                checksum
-            );
-
             // Serializar mensaje completo
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            baos.write(header.toBytes());
-            baos.write(messageBytes);
-            byte[] fullMessage = baos.toByteArray();
+            byte[] fullMessage = buildChatPacket(messageBytes, correlId, checksum);
 
             // Enviar
             connectionManager.send(connectionId, fullMessage);
@@ -96,18 +86,84 @@ public class ChatService {
                     return;
                 }
 
-                // Publicar evento
-                eventAggregator.publish(new NetworkEvent(
-                    NetworkEvent.EventType.MESSAGE_RECEIVED,
-                    new ChatMessage(source, message, header.getCorrelId()),
-                    source
-                ));
+                if (message.startsWith("TO:")) {
+                    if (connectionManager.isServerMode()) {
+                        routeChatMessage(source, message, header.getCorrelId());
+                    }
+                    return;
+                }
+
+                ChatMessage chatMessage = buildChatMessageFromPayload(message, header.getCorrelId(), source);
+                if (chatMessage != null) {
+                    eventAggregator.publish(new NetworkEvent(
+                        NetworkEvent.EventType.MESSAGE_RECEIVED,
+                        chatMessage,
+                        chatMessage.getSource()
+                    ));
+                }
 
                 logService.logInfo("Mensaje recibido de " + source, "ChatService", traceId, null);
             }
         } catch (Exception e) {
             logger.error("Error procesando mensaje recibido", e);
         }
+    }
+
+    private void routeChatMessage(String source, String payload, int correlId) {
+        int separatorIndex = payload.indexOf('|');
+        if (separatorIndex <= 3) {
+            logger.warn("Payload inválido para enrutamiento: " + payload);
+            return;
+        }
+
+        String targetId = payload.substring(3, separatorIndex);
+        String encodedMessage = payload.substring(separatorIndex + 1);
+
+        try {
+            String forwardPayload = "FROM:" + source + "|" + encodedMessage;
+            byte[] forwardBytes = forwardPayload.getBytes(StandardCharsets.UTF_8);
+            byte[] packet = buildChatPacket(forwardBytes, correlId, calculateChecksum(forwardBytes));
+            connectionManager.send(targetId, packet);
+            logger.info("Mensaje reenviado de " + source + " a " + targetId);
+        } catch (IOException e) {
+            logger.error("Error reenviando mensaje a " + targetId, e);
+        }
+    }
+
+    private ChatMessage buildChatMessageFromPayload(String payload, int correlId, String fallbackSource) {
+        if (!payload.startsWith("FROM:")) {
+            return new ChatMessage(fallbackSource, payload, correlId);
+        }
+
+        int separatorIndex = payload.indexOf('|');
+        if (separatorIndex <= 5) {
+            logger.warn("Payload inválido para mensaje entrante: " + payload);
+            return null;
+        }
+
+        String senderId = payload.substring(5, separatorIndex);
+        String encodedMessage = payload.substring(separatorIndex + 1);
+        try {
+            String message = new String(Base64.getDecoder().decode(encodedMessage), StandardCharsets.UTF_8);
+            return new ChatMessage(senderId, message, correlId);
+        } catch (IllegalArgumentException e) {
+            logger.error("Error decodificando mensaje Base64", e);
+            return null;
+        }
+    }
+
+    private byte[] buildChatPacket(byte[] messageBytes, int correlId, int checksum) throws IOException {
+        MessageHeader header = new MessageHeader(
+            MessageHeader.MessageType.CHAT,
+            messageBytes.length,
+            correlId,
+            checksum
+        );
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        baos.write(header.toBytes());
+        baos.write(messageBytes);
+        return baos.toByteArray();
     }
 
     private int calculateChecksum(byte[] data) {

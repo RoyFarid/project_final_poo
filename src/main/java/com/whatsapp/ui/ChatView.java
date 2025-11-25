@@ -17,20 +17,23 @@ import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
 import java.io.File;
-import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 
 public class ChatView extends BorderPane implements NetworkEventObserver {
     private final Usuario currentUser;
     private final String connectionId;
+    private final String serverConnectionId;
     private final NetworkFacade networkFacade;
     private final CommandInvoker commandInvoker;
     private final ListView<String> messagesList;
     private TextField messageField;
     private Label statusLabel;
 
-    public ChatView(Usuario currentUser, String connectionId, NetworkFacade networkFacade) {
+    public ChatView(Usuario currentUser, String connectionId, String serverConnectionId, NetworkFacade networkFacade) {
         this.currentUser = currentUser;
         this.connectionId = connectionId;
+        this.serverConnectionId = serverConnectionId;
         this.networkFacade = networkFacade;
         this.commandInvoker = new CommandInvoker();
         this.messagesList = new ListView<>();
@@ -98,10 +101,18 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
         }
 
         try {
+            if (serverConnectionId == null) {
+                showAlert("Error", "No hay conexión activa con el servidor.", Alert.AlertType.ERROR);
+                return;
+            }
+
+            String encodedMessage = Base64.getEncoder().encodeToString(message.getBytes(StandardCharsets.UTF_8));
+            String payload = "TO:" + connectionId + "|" + encodedMessage;
+
             SendMessageCommand command = new SendMessageCommand(
                 networkFacade,
-                connectionId,
-                message,
+                serverConnectionId,
+                payload,
                 currentUser.getId(),
                 connectionId
             );

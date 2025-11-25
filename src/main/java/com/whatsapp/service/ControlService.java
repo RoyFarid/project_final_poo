@@ -41,7 +41,8 @@ public class ControlService {
      * Envía la lista de usuarios conectados a un cliente específico
      */
     public void sendUserList(String connectionId) throws IOException {
-        Set<String> connectedUsers = connectionManager.getConnectedClients();
+        Set<String> connectedUsers = new java.util.HashSet<>(connectionManager.getConnectedClients());
+        connectedUsers.remove(connectionId);
         logger.info("Enviando lista de usuarios a " + connectionId + ". Usuarios: " + connectedUsers);
         String userListJson = buildUserListJson(connectedUsers);
         logger.info("JSON generado: " + userListJson);

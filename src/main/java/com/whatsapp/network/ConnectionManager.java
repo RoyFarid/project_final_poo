@@ -29,6 +29,7 @@ public class ConnectionManager {
     private ExecutorService executorService;
     private ServerSocket serverSocket;
     private final AtomicBoolean isRunning;
+    private final AtomicBoolean serverMode;
     private ConnectionState state;
     private ConnectionStateListener stateListener;
     private final EventAggregator eventAggregator;
@@ -40,6 +41,7 @@ public class ConnectionManager {
         this.outputStreams = new ConcurrentHashMap<>();
         this.executorService = Executors.newCachedThreadPool();
         this.isRunning = new AtomicBoolean(false);
+        this.serverMode = new AtomicBoolean(false);
         this.state = ConnectionState.DESCONECTADO;
         this.eventAggregator = EventAggregator.getInstance();
         this.logService = LogService.getInstance();
@@ -61,6 +63,7 @@ public class ConnectionManager {
         ensureExecutorService();
         serverSocket = SocketFactory.createTcpServerSocket(port);
         isRunning.set(true);
+        serverMode.set(true);
         setState(ConnectionState.ACTIVO);
         
         logService.logInfo("Servidor iniciado en puerto " + port, "ConnectionManager", traceId, null);
@@ -125,6 +128,7 @@ public class ConnectionManager {
         connections.put(connectionId, socket);
         outputStreams.put(connectionId, new DataOutputStream(socket.getOutputStream()));
         isRunning.set(true);
+        serverMode.set(false);
         setState(ConnectionState.ACTIVO);
         
         logService.logInfo("Conectado a servidor: " + host + ":" + port, "ConnectionManager", traceId, null);
@@ -220,6 +224,7 @@ public class ConnectionManager {
 
     public void stop() {
         isRunning.set(false);
+        serverMode.set(false);
         setState(ConnectionState.DESCONECTADO);
         
         for (String connectionId : new java.util.ArrayList<>(connections.keySet())) {
@@ -261,6 +266,17 @@ public class ConnectionManager {
 
     public java.util.Set<String> getConnectedClients() {
         return connections.keySet();
+    }
+
+    public boolean isServerMode() {
+        return serverMode.get();
+    }
+
+    public String getPrimaryConnectionId() {
+        for (String id : connections.keySet()) {
+            return id;
+        }
+        return null;
     }
 
     public void disconnectAllClients() {
