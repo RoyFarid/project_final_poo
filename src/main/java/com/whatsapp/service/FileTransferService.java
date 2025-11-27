@@ -120,9 +120,13 @@ public class FileTransferService {
                 transferencia.setFin(java.time.LocalDateTime.now());
                 transferenciaRepository.update(transferencia);
             }
-            
+
             activeTransfers.remove(transferId);
-            logService.logInfo("Archivo enviado: " + fileName, "FileTransferService", traceId, userId);
+            try {
+                logService.logInfo("Archivo enviado: " + fileName, "FileTransferService", traceId, userId);
+            } catch (Exception logEx) {
+                logger.warn("Archivo enviado pero no se pudo registrar el log", logEx);
+            }
         } catch (IOException e) {
             if (transferencia != null) {
                 transferencia.setEstado(Transferencia.EstadoTransferencia.ERROR);
