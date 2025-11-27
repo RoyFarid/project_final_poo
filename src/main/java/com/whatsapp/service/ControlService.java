@@ -611,6 +611,9 @@ public class ControlService {
 
     private void handleRoomCreateRequest(String payload, String source) {
         try {
+            logger.info("Procesando solicitud de creación de room desde: " + source);
+            logger.info("Payload recibido: " + payload);
+            
             // Formato: roomName|creatorUsername|member1,member2,member3
             String[] parts = payload.split("\\|");
             if (parts.length < 2) {
@@ -635,23 +638,37 @@ public class ControlService {
                 }
             }
 
-            // Obtener el username del servidor desde ServerRuntime o RoomService
-            // Por ahora, necesitamos obtenerlo de alguna manera
-            // Esto se puede mejorar pasando el serverUsername al ControlService
+            logger.info("Room name: " + roomName + ", Creator: " + creatorUsername + ", Members: " + members);
+            
+            // Verificar que RoomService tenga configurado el serverUsername
+            String serverUsername = roomService.getServerUsername();
+            if (serverUsername == null || serverUsername.isEmpty()) {
+                logger.error("RoomService no tiene configurado el serverUsername");
+                sendControlMessage(source, CONTROL_ROOM_CREATE_RESPONSE, 
+                    OperationResultPayload.error("El servidor no está configurado para recibir rooms").toPayload());
+                return;
+            }
+            
+            logger.info("ServerUsername configurado: " + serverUsername);
+            
             Room room = roomService.createRoomRequest(roomName, source, creatorUsername, members);
+            logger.info("Room creado con ID: " + room.getId() + ", Estado: " + room.getEstado());
             
             // Publicar evento para que el servidor vea la solicitud pendiente
+            // Usar "SERVER" como source para que ServerView lo detecte correctamente
             eventAggregator.publish(new NetworkEvent(
                 NetworkEvent.EventType.ROOM_CREATED,
                 room,
-                source
+                "SERVER"
             ));
+            logger.info("Evento ROOM_CREATED publicado");
 
             // Responder al cliente que la solicitud fue recibida
             String response = "PENDIENTE|" + encodeCredential(String.valueOf(room.getId())) + "|" + encodeCredential(roomName);
             sendControlMessage(source, CONTROL_ROOM_CREATE_RESPONSE, response);
+            logger.info("Respuesta enviada al cliente");
         } catch (Exception e) {
-            logger.error("Error procesando solicitud de creación de room", e);
+            logger.error("Error procesando solicitud de creación de room: " + e.getMessage(), e);
             try {
                 sendControlMessage(source, CONTROL_ROOM_CREATE_RESPONSE, 
                     OperationResultPayload.error("Error al crear room: " + e.getMessage()).toPayload());

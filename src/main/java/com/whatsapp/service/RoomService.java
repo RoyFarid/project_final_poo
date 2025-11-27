@@ -52,11 +52,22 @@ public class RoomService {
         refreshActiveRoomsCache();
     }
 
+    public String getServerUsername() {
+        return serverUsername;
+    }
+
     /**
      * Crea una solicitud de room (pendiente de aprobación)
      */
     public Room createRoomRequest(String roomName, String creatorConnectionId, String creatorUsername, Set<String> memberConnectionIds) {
+        System.out.println("[RoomService] createRoomRequest llamado");
+        System.out.println("[RoomService] serverUsername: " + serverUsername);
+        System.out.println("[RoomService] roomName: " + roomName);
+        System.out.println("[RoomService] creatorConnectionId: " + creatorConnectionId);
+        System.out.println("[RoomService] creatorUsername: " + creatorUsername);
+        
         if (serverUsername == null) {
+            System.out.println("[RoomService] ERROR: serverUsername es null!");
             throw new IllegalStateException("Server username no está configurado");
         }
 
@@ -64,8 +75,18 @@ public class RoomService {
         room.getMembers().addAll(memberConnectionIds);
         room.getMembers().add(creatorConnectionId); // El creador también es miembro
         
-        room = roomRepository.save(room);
+        System.out.println("[RoomService] Room creado en memoria, guardando en BD...");
+        try {
+            room = roomRepository.save(room);
+            System.out.println("[RoomService] Room guardado con ID: " + room.getId());
+        } catch (Exception e) {
+            System.out.println("[RoomService] ERROR guardando room: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
+        }
+        
         activeRoomsCache.put(room.getId(), room);
+        System.out.println("[RoomService] Room agregado a cache");
         
         logService.logInfo("Solicitud de room creada: " + roomName, "RoomService", traceId, null);
         return room;
@@ -200,13 +221,23 @@ public class RoomService {
      * Obtiene todos los rooms pendientes
      */
     public List<Room> getPendingRooms() {
+        System.out.println("[RoomService] getPendingRooms llamado");
+        System.out.println("[RoomService] serverUsername: " + serverUsername);
+        
         if (serverUsername == null) {
+            System.out.println("[RoomService] serverUsername es null, retornando lista vacía");
             return Collections.emptyList();
         }
+        
         List<Room> allRooms = roomRepository.findByServerUsername(serverUsername);
-        return allRooms.stream()
+        System.out.println("[RoomService] Rooms encontrados para servidor '" + serverUsername + "': " + allRooms.size());
+        
+        List<Room> pending = allRooms.stream()
                 .filter(r -> r.getEstado() == Room.EstadoRoom.PENDIENTE)
                 .toList();
+        System.out.println("[RoomService] Rooms PENDIENTES: " + pending.size());
+        
+        return pending;
     }
 
     /**

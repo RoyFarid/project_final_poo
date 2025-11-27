@@ -423,10 +423,15 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
                     addActivity(resolveDisplayName(event.getSource()) + ": Videollamada activa");
                     break;
                 case ROOM_CREATED:
+                    System.out.println("[ServerView] Evento ROOM_CREATED recibido, data type: " + 
+                        (event.getData() != null ? event.getData().getClass().getName() : "null"));
                     if (event.getData() instanceof Room) {
                         Room room = (Room) event.getData();
+                        System.out.println("[ServerView] Room recibido: " + room.getName() + ", Estado: " + room.getEstado());
                         addActivity("Nueva solicitud de room: " + room.getName() + " (por " + room.getCreatorUsername() + ")");
                         refreshRoomsList();
+                    } else {
+                        System.out.println("[ServerView] Data no es instancia de Room: " + event.getData());
                     }
                     break;
                 case ROOM_APPROVED:
@@ -607,10 +612,16 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
 
     private void refreshRoomsList() {
         Platform.runLater(() -> {
+            System.out.println("[ServerView] Refrescando lista de rooms...");
             List<Room> pending = roomService.getPendingRooms();
+            System.out.println("[ServerView] Rooms pendientes encontrados: " + pending.size());
+            for (Room r : pending) {
+                System.out.println("[ServerView]   - " + r.getName() + " (ID: " + r.getId() + ", Estado: " + r.getEstado() + ")");
+            }
             pendingRoomsList.getItems().setAll(pending);
             
             List<Room> active = roomService.getActiveRooms();
+            System.out.println("[ServerView] Rooms activos encontrados: " + active.size());
             activeRoomsList.getItems().setAll(active);
         });
     }
