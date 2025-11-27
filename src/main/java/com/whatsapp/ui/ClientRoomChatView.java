@@ -95,13 +95,15 @@ public class ClientRoomChatView extends BorderPane implements com.whatsapp.netwo
         VBox membersBox = new VBox(5, membersLabel, membersList);
         membersBox.setPadding(new Insets(0, 0, 0, 10));
 
-        // Placeholder de video (pendiente de implementar)
-        videoBox.setPrefSize(220, 180);
-        videoBox.setStyle("-fx-border-color: #cccccc; -fx-background-color: #f5f5f5;");
-        Label videoLabel = new Label("Video remoto (próximamente)");
-        videoLabel.setStyle("-fx-text-fill: #666;");
+        // Viewer de video
+        remoteVideoView = new ImageView();
+        remoteVideoView.setFitWidth(220);
+        remoteVideoView.setPreserveRatio(true);
+        remoteVideoView.setStyle("-fx-border-color: #cccccc; -fx-background-color: #000;");
+        videoStatusLabel = new Label("Video: sin señal");
+        videoStatusLabel.setStyle("-fx-text-fill: #666;");
         videoBox.setPadding(new Insets(8));
-        videoBox.getChildren().setAll(videoLabel);
+        videoBox.getChildren().setAll(remoteVideoView, videoStatusLabel);
         VBox rightBox = new VBox(10, membersBox, videoBox);
 
         HBox center = new HBox(10, messagesList, rightBox);
