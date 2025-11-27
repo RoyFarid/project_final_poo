@@ -454,9 +454,7 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
                             activity.append(" - Motivo: ").append(reason);
                         }
                         addActivity(activity.toString());
-                        if (!pendingRoomsList.getItems().contains(room)) {
-                            pendingRoomsList.getItems().add(room);
-                        }
+                        pendingRoomsList.getItems().add(room);
                         refreshRoomsList();
                     } else {
                         System.out.println("[ServerView] Data no es instancia de Room: " + event.getData());

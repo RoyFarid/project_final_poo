@@ -812,6 +812,19 @@ public class ControlService {
                 return;
             }
             Room room = roomOpt.get();
+            // Publicar para UI del servidor
+            RoomChatMessage selfMsg = parseRoomChatMessage(
+                encodeCredential(String.valueOf(roomId)) + "|" +
+                encodeCredential(senderConnectionId) + "|" +
+                encodedMessage
+            );
+            if (selfMsg != null) {
+                eventAggregator.publish(new NetworkEvent(
+                    NetworkEvent.EventType.ROOM_MESSAGE,
+                    selfMsg,
+                    senderConnectionId
+                ));
+            }
             for (String memberId : room.getMembers()) {
                 if (memberId == null || memberId.equals(senderConnectionId) || memberId.startsWith("SERVER_")) {
                     continue;
