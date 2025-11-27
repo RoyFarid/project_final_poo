@@ -740,7 +740,11 @@ public class ControlService {
                 Room room = roomOpt.get();
                 // Notificar al creador
                 String response = "REJECTED|" + encodeCredential(String.valueOf(roomId)) + "|" + encodeCredential(room.getName());
-                sendControlMessage(room.getCreatorConnectionId(), CONTROL_ROOM_REJECT, response);
+                if (room.getCreatorConnectionId() != null
+                    && !room.getCreatorConnectionId().startsWith("SERVER_")
+                    && connectionManager.getConnectedClients().contains(room.getCreatorConnectionId())) {
+                    sendControlMessage(room.getCreatorConnectionId(), CONTROL_ROOM_REJECT, response);
+                }
             }
         }
     }
@@ -752,8 +756,18 @@ public class ControlService {
                 Room room = roomOpt.get();
                 // Notificar a todos los miembros
                 for (String memberId : room.getMembers()) {
+                    if (memberId == null || memberId.startsWith("SERVER_")) {
+                        continue;
+                    }
+                    if (!connectionManager.getConnectedClients().contains(memberId)) {
+                        continue;
+                    }
                     String response = "CLOSED|" + encodeCredential(String.valueOf(roomId)) + "|" + encodeCredential(room.getName());
-                    sendControlMessage(memberId, CONTROL_ROOM_CLOSE, response);
+                    try {
+                        sendControlMessage(memberId, CONTROL_ROOM_CLOSE, response);
+                    } catch (IOException e) {
+                        logger.warn("No se pudo notificar cierre a {}", memberId, e);
+                    }
                 }
             }
         }
