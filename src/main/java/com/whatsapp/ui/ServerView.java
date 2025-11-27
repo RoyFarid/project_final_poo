@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import com.whatsapp.model.Room;
 import com.whatsapp.model.Usuario;
@@ -114,22 +115,45 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
         connectedUsersList.setPrefHeight(200);
         
         // Botones de control de admin
-        HBox adminControls = new HBox(5);
+        VBox adminControls = new VBox(5);
+        HBox adminRow1 = new HBox(5);
+        HBox adminRow2 = new HBox(5);
+        HBox adminRow3 = new HBox(5);
+        
         Button muteButton = new Button("Silenciar");
+        muteButton.setPrefWidth(120);
+        muteButton.setWrapText(true);
         muteButton.setOnAction(e -> handleMuteUser());
+        
         Button unmuteButton = new Button("Activar Audio");
+        unmuteButton.setPrefWidth(120);
+        unmuteButton.setWrapText(true);
         unmuteButton.setOnAction(e -> handleUnmuteUser());
+        
         Button disableCameraButton = new Button("Desactivar Cámara");
+        disableCameraButton.setPrefWidth(120);
+        disableCameraButton.setWrapText(true);
         disableCameraButton.setOnAction(e -> handleDisableCamera());
+        
         Button enableCameraButton = new Button("Activar Cámara");
+        enableCameraButton.setPrefWidth(120);
+        enableCameraButton.setWrapText(true);
         enableCameraButton.setOnAction(e -> handleEnableCamera());
+        
         Button blockMessagesButton = new Button("Bloquear Mensajes");
+        blockMessagesButton.setPrefWidth(120);
+        blockMessagesButton.setWrapText(true);
         blockMessagesButton.setOnAction(e -> handleBlockMessages());
+        
         Button unblockMessagesButton = new Button("Permitir Mensajes");
+        unblockMessagesButton.setPrefWidth(120);
+        unblockMessagesButton.setWrapText(true);
         unblockMessagesButton.setOnAction(e -> handleUnblockMessages());
         
-        adminControls.getChildren().addAll(muteButton, unmuteButton, disableCameraButton, 
-            enableCameraButton, blockMessagesButton, unblockMessagesButton);
+        adminRow1.getChildren().addAll(muteButton, unmuteButton);
+        adminRow2.getChildren().addAll(disableCameraButton, enableCameraButton);
+        adminRow3.getChildren().addAll(blockMessagesButton, unblockMessagesButton);
+        adminControls.getChildren().addAll(adminRow1, adminRow2, adminRow3);
         
         usersBox.getChildren().addAll(usersLabel, connectedUsersList, new Label("Controles Admin:"), adminControls);
 
@@ -173,16 +197,33 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
             }
         });
         
-        HBox activeRoomControls = new HBox(5);
+        VBox activeRoomControls = new VBox(5);
+        HBox activeRoomRow1 = new HBox(5);
+        HBox activeRoomRow2 = new HBox(5);
+        
         Button joinRoomButton = new Button("Unirse al Room");
+        joinRoomButton.setPrefWidth(120);
+        joinRoomButton.setWrapText(true);
         joinRoomButton.setOnAction(e -> handleJoinRoom());
+        
         Button openRoomChatButton = new Button("Abrir Chat del Room");
+        openRoomChatButton.setPrefWidth(120);
+        openRoomChatButton.setWrapText(true);
         openRoomChatButton.setOnAction(e -> handleOpenRoomChat());
+        
         Button leaveRoomButton = new Button("Salir del Room");
+        leaveRoomButton.setPrefWidth(120);
+        leaveRoomButton.setWrapText(true);
         leaveRoomButton.setOnAction(e -> handleLeaveRoom());
+        
         Button closeRoomButton = new Button("Cerrar Room");
+        closeRoomButton.setPrefWidth(120);
+        closeRoomButton.setWrapText(true);
         closeRoomButton.setOnAction(e -> handleCloseRoom());
-        activeRoomControls.getChildren().addAll(joinRoomButton, openRoomChatButton, leaveRoomButton, closeRoomButton);
+        
+        activeRoomRow1.getChildren().addAll(joinRoomButton, openRoomChatButton);
+        activeRoomRow2.getChildren().addAll(leaveRoomButton, closeRoomButton);
+        activeRoomControls.getChildren().addAll(activeRoomRow1, activeRoomRow2);
         
         roomsBox.getChildren().addAll(pendingRoomsLabel, pendingRoomsList, roomControls,
             activeRoomsLabel, activeRoomsList, activeRoomControls);
@@ -338,8 +379,17 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
                     }
                     String clientId = event.getData().toString();
                     if (!"Servidor iniciado".equals(clientId)) {
+                        // Agregar usuario a la lista inmediatamente, aunque aún no tenga alias
+                        // El alias se actualizará cuando llegue el mensaje CONTROL_USER_ALIAS
                         String displayName = aliasRegistry.getAliasOrDefault(clientId);
-                        if (!displayName.equals(clientId)) {
+                        // Si no tiene alias aún, usar el connectionId temporalmente
+                        if (displayName.equals(clientId)) {
+                            // Usuario recién conectado, agregarlo con su connectionId
+                            connectedUserMap.put(clientId, clientId);
+                            refreshConnectedUsersList();
+                            addActivity("Usuario conectado: " + clientId);
+                        } else {
+                            // Usuario con alias, agregarlo con su nombre
                             connectedUserMap.put(clientId, displayName);
                             refreshConnectedUsersList();
                             addActivity("Usuario conectado: " + displayName);
@@ -394,10 +444,26 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
         if (!data.startsWith("[") || !data.endsWith("]")) {
             return;
         }
-        connectedUserMap.clear();
-        for (ControlService.UserDescriptor descriptor : ControlService.parseUserListJson(data)) {
-            connectedUserMap.put(descriptor.getConnectionId(), descriptor.getDisplayName());
-            aliasRegistry.registerAlias(descriptor.getConnectionId(), descriptor.getDisplayName());
+        // No limpiar el mapa, solo actualizar los alias existentes y agregar nuevos
+        Set<ControlService.UserDescriptor> descriptors = ControlService.parseUserListJson(data);
+        for (ControlService.UserDescriptor descriptor : descriptors) {
+            String connectionId = descriptor.getConnectionId();
+            String displayName = descriptor.getDisplayName();
+            
+            // Si el usuario ya está en la lista, actualizar su nombre
+            if (connectedUserMap.containsKey(connectionId)) {
+                String oldName = connectedUserMap.get(connectionId);
+                connectedUserMap.put(connectionId, displayName);
+                // Si el nombre cambió (de connectionId a displayName), actualizar actividad
+                if (oldName.equals(connectionId) && !displayName.equals(connectionId)) {
+                    addActivity("Usuario identificado: " + displayName);
+                }
+            } else {
+                // Usuario nuevo, agregarlo
+                connectedUserMap.put(connectionId, displayName);
+                addActivity("Usuario conectado: " + displayName);
+            }
+            aliasRegistry.registerAlias(connectionId, displayName);
         }
         refreshConnectedUsersList();
     }
