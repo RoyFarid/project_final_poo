@@ -217,6 +217,11 @@ public class RoomService {
             return false;
         }
 
+        // Si ya es miembro, evitar duplicar eventos
+        if (room.hasMember(connectionId)) {
+            return true;
+        }
+
         room.addMember(connectionId);
         roomRepository.addMember(roomId, connectionId);
         activeRoomsCache.put(room.getId(), room);

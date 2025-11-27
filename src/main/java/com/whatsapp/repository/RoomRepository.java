@@ -22,6 +22,7 @@ public class RoomRepository implements IRepository<Room, Long> {
 
     public RoomRepository() {
         this.dbManager = DatabaseManager.getInstance();
+        ensureSchema();
     }
 
     @Override
@@ -140,6 +141,7 @@ public class RoomRepository implements IRepository<Room, Long> {
             return room;
         } catch (SQLException primary) {
             logger.warn("Insert extendido falló, intentando fallback (esquema antiguo)", primary);
+            ensureSchema();
             String legacySql = "INSERT INTO Room (Name, CreatorConnectionId, CreatorUsername, Estado, FechaCreacion, ServerUsername) " +
                                "VALUES (?, ?, ?, ?, ?, ?)";
             try (Connection conn = dbManager.getConnection();
@@ -364,6 +366,46 @@ public class RoomRepository implements IRepository<Room, Long> {
             logger.info("Eliminados {} rooms del servidor {}", deleted, serverUsername);
         } catch (SQLException e) {
             logger.error("Error al eliminar rooms del servidor", e);
+        }
+    }
+
+    /**
+     * Asegura que las tablas Room y RoomMember existan y tengan columnas vigentes.
+     */
+    private void ensureSchema() {
+        try (Connection conn = dbManager.getConnection();
+             Statement stmt = conn.createStatement()) {
+            stmt.execute("""
+                CREATE TABLE IF NOT EXISTS Room (
+                    Id INT AUTO_INCREMENT PRIMARY KEY,
+                    Name VARCHAR(100) NOT NULL,
+                    CreatorConnectionId VARCHAR(255) NOT NULL,
+                    CreatorUsername VARCHAR(50) NOT NULL,
+                    Estado VARCHAR(20) NOT NULL DEFAULT 'PENDIENTE',
+                    FechaCreacion DATETIME NOT NULL,
+                    ServerUsername VARCHAR(50) NOT NULL,
+                    RequestMessage TEXT,
+                    IncludeServer BOOLEAN DEFAULT FALSE,
+                    INDEX idx_server (ServerUsername),
+                    INDEX idx_estado (Estado)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """);
+
+            stmt.execute("""
+                CREATE TABLE IF NOT EXISTS RoomMember (
+                    RoomId INT NOT NULL,
+                    ConnectionId VARCHAR(255) NOT NULL,
+                    PRIMARY KEY (RoomId, ConnectionId),
+                    FOREIGN KEY (RoomId) REFERENCES Room(Id) ON DELETE CASCADE,
+                    INDEX idx_connection (ConnectionId)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """);
+
+            try { stmt.execute("ALTER TABLE Room ADD COLUMN RequestMessage TEXT"); } catch (SQLException ignored) { }
+            try { stmt.execute("ALTER TABLE Room ADD COLUMN IncludeServer BOOLEAN DEFAULT FALSE"); } catch (SQLException ignored) { }
+            try { stmt.execute("ALTER TABLE Room ADD COLUMN ServerUsername VARCHAR(50) NOT NULL DEFAULT ''"); } catch (SQLException ignored) { }
+        } catch (SQLException e) {
+            logger.warn("No se pudo asegurar esquema de Room/RoomMember", e);
         }
     }
 }

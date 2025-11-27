@@ -722,6 +722,10 @@ public class ControlService {
                 Room room = roomOpt.get();
                 // Notificar a todos los miembros
                 for (String memberId : room.getMembers()) {
+                    // Evitar enviar a IDs especiales del servidor o no conectados
+                    if (memberId.startsWith("SERVER_") || !connectionManager.getConnectedClients().contains(memberId)) {
+                        continue;
+                    }
                     String response = "APPROVED|" + encodeCredential(String.valueOf(roomId)) + "|" + encodeCredential(room.getName());
                     sendControlMessage(memberId, CONTROL_ROOM_APPROVE, response);
                 }
