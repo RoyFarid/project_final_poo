@@ -65,10 +65,10 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
         this.roomService = RoomService.getInstance();
         this.pendingRoomsList = new ListView<>();
         this.activeRoomsList = new ListView<>();
-        
+
         // Configurar RoomService con el username del servidor
         roomService.setServerUsername(currentUser.getUsername());
-        
+
         EventAggregator.getInstance().subscribe(this);
         setupUI();
     }
@@ -85,15 +85,15 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
 
         HBox configBox = new HBox(10);
         configBox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
-        
+
         Label portLabel = new Label("Puerto:");
         portLabel.setStyle("-fx-text-fill: white;");
         portField.setPrefWidth(100);
-        
+
         startServerButton = new Button("Iniciar Servidor");
         startServerButton.setStyle("-fx-background-color: #25D366; -fx-text-fill: white;");
         startServerButton.setOnAction(e -> startServer());
-        
+
         stopServerButton = new Button("Detener Servidor");
         stopServerButton.setStyle("-fx-background-color: #dc3545; -fx-text-fill: white;");
         stopServerButton.setDisable(true);
@@ -113,48 +113,48 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
         Label usersLabel = new Label("Usuarios Conectados:");
         usersLabel.setFont(Font.font(14));
         connectedUsersList.setPrefHeight(200);
-        
+
         // Botones de control de admin
         VBox adminControls = new VBox(5);
         HBox adminRow1 = new HBox(5);
         HBox adminRow2 = new HBox(5);
         HBox adminRow3 = new HBox(5);
-        
+
         Button muteButton = new Button("Silenciar");
         muteButton.setPrefWidth(120);
         muteButton.setWrapText(true);
         muteButton.setOnAction(e -> handleMuteUser());
-        
+
         Button unmuteButton = new Button("Activar Audio");
         unmuteButton.setPrefWidth(120);
         unmuteButton.setWrapText(true);
         unmuteButton.setOnAction(e -> handleUnmuteUser());
-        
+
         Button disableCameraButton = new Button("Desactivar Cámara");
         disableCameraButton.setPrefWidth(120);
         disableCameraButton.setWrapText(true);
         disableCameraButton.setOnAction(e -> handleDisableCamera());
-        
+
         Button enableCameraButton = new Button("Activar Cámara");
         enableCameraButton.setPrefWidth(120);
         enableCameraButton.setWrapText(true);
         enableCameraButton.setOnAction(e -> handleEnableCamera());
-        
+
         Button blockMessagesButton = new Button("Bloquear Mensajes");
         blockMessagesButton.setPrefWidth(120);
         blockMessagesButton.setWrapText(true);
         blockMessagesButton.setOnAction(e -> handleBlockMessages());
-        
+
         Button unblockMessagesButton = new Button("Permitir Mensajes");
         unblockMessagesButton.setPrefWidth(120);
         unblockMessagesButton.setWrapText(true);
         unblockMessagesButton.setOnAction(e -> handleUnblockMessages());
-        
+
         adminRow1.getChildren().addAll(muteButton, unmuteButton);
         adminRow2.getChildren().addAll(disableCameraButton, enableCameraButton);
         adminRow3.getChildren().addAll(blockMessagesButton, unblockMessagesButton);
         adminControls.getChildren().addAll(adminRow1, adminRow2, adminRow3);
-        
+
         usersBox.getChildren().addAll(usersLabel, connectedUsersList, new Label("Controles Admin:"), adminControls);
 
         // Panel de rooms
@@ -171,8 +171,8 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
                     setText(null);
                 } else {
                     String creatorName = room.getCreatorUsername() != null
-                        ? room.getCreatorUsername()
-                        : aliasRegistry.getAliasOrDefault(room.getCreatorConnectionId());
+                            ? room.getCreatorUsername()
+                            : aliasRegistry.getAliasOrDefault(room.getCreatorConnectionId());
                     String reason = room.getRequestMessage();
                     StringBuilder summary = new StringBuilder();
                     summary.append(room.getName()).append(" (por ").append(creatorName).append(")");
@@ -186,14 +186,14 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
                 }
             }
         });
-        
+
         HBox roomControls = new HBox(5);
         Button approveRoomButton = new Button("Aprobar");
         approveRoomButton.setOnAction(e -> handleApproveRoom());
         Button rejectRoomButton = new Button("Rechazar");
         rejectRoomButton.setOnAction(e -> handleRejectRoom());
         roomControls.getChildren().addAll(approveRoomButton, rejectRoomButton);
-        
+
         Label activeRoomsLabel = new Label("Rooms Activos:");
         activeRoomsLabel.setFont(Font.font(12));
         activeRoomsList.setPrefHeight(150);
@@ -208,37 +208,37 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
                 }
             }
         });
-        
+
         VBox activeRoomControls = new VBox(5);
         HBox activeRoomRow1 = new HBox(5);
         HBox activeRoomRow2 = new HBox(5);
-        
+
         Button joinRoomButton = new Button("Unirse al Room");
         joinRoomButton.setPrefWidth(120);
         joinRoomButton.setWrapText(true);
         joinRoomButton.setOnAction(e -> handleJoinRoom());
-        
+
         Button openRoomChatButton = new Button("Abrir Chat del Room");
         openRoomChatButton.setPrefWidth(120);
         openRoomChatButton.setWrapText(true);
         openRoomChatButton.setOnAction(e -> handleOpenRoomChat());
-        
+
         Button leaveRoomButton = new Button("Salir del Room");
         leaveRoomButton.setPrefWidth(120);
         leaveRoomButton.setWrapText(true);
         leaveRoomButton.setOnAction(e -> handleLeaveRoom());
-        
+
         Button closeRoomButton = new Button("Cerrar Room");
         closeRoomButton.setPrefWidth(120);
         closeRoomButton.setWrapText(true);
         closeRoomButton.setOnAction(e -> handleCloseRoom());
-        
+
         activeRoomRow1.getChildren().addAll(joinRoomButton, openRoomChatButton);
         activeRoomRow2.getChildren().addAll(leaveRoomButton, closeRoomButton);
         activeRoomControls.getChildren().addAll(activeRoomRow1, activeRoomRow2);
-        
+
         roomsBox.getChildren().addAll(pendingRoomsLabel, pendingRoomsList, roomControls,
-            activeRoomsLabel, activeRoomsList, activeRoomControls);
+                activeRoomsLabel, activeRoomsList, activeRoomControls);
 
         VBox activityBox = new VBox(5);
         Label activityLabel = new Label("Actividades:");
@@ -248,7 +248,7 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
 
         centerBox.getChildren().addAll(usersBox, roomsBox, activityBox);
         setCenter(centerBox);
-        
+
         // Configurar selección de usuarios
         connectedUsersList.setOnMouseClicked(e -> {
             String selected = connectedUsersList.getSelectionModel().getSelectedItem();
@@ -262,7 +262,7 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
                 }
             }
         });
-        
+
         // Refrescar lista de rooms periódicamente
         refreshRoomsList();
 
@@ -270,15 +270,15 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
         VBox bottomPanel = new VBox(5);
         bottomPanel.setPadding(new Insets(10));
         bottomPanel.setStyle("-fx-background-color: #f0f0f0;");
-        
+
         Label statusLabel = new Label("Estado: Desconectado");
         statusLabel.setId("statusLabel");
-        
+
         Label ipInfoLabel = new Label("IPs disponibles: " + getAvailableIPs());
         ipInfoLabel.setId("ipInfoLabel");
         ipInfoLabel.setStyle("-fx-font-size: 11px; -fx-text-fill: #666;");
         ipInfoLabel.setWrapText(true);
-        
+
         bottomPanel.getChildren().addAll(statusLabel, ipInfoLabel);
         setBottom(bottomPanel);
     }
@@ -287,11 +287,12 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
         try {
             int port = Integer.parseInt(portField.getText());
             networkFacade.startServer(port);
-            
-            // Obtener el connection ID del servidor (usando el primer cliente conectado como referencia)
+
+            // Obtener el connection ID del servidor (usando el primer cliente conectado
+            // como referencia)
             // En modo servidor, el servidor puede usar su propio connection ID
             serverConnectionId = "SERVER_" + currentUser.getUsername();
-            
+
             Platform.runLater(() -> {
                 startServerButton.setDisable(true);
                 stopServerButton.setDisable(false);
@@ -301,7 +302,8 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
                 // Actualizar información de IPs
                 Label ipInfoLabel = (Label) lookup("#ipInfoLabel");
                 if (ipInfoLabel != null) {
-                    ipInfoLabel.setText("IPs disponibles: " + getAvailableIPs() + " | Comparte la IP de Hamachi con los clientes");
+                    ipInfoLabel.setText(
+                            "IPs disponibles: " + getAvailableIPs() + " | Comparte la IP de Hamachi con los clientes");
                 }
             });
         } catch (NumberFormatException e) {
@@ -313,7 +315,7 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
 
     private void stopServer() {
         networkFacade.disconnect();
-        
+
         Platform.runLater(() -> {
             startServerButton.setDisable(false);
             stopServerButton.setDisable(true);
@@ -327,10 +329,9 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
 
     private void addActivity(String activity) {
         String timestamp = java.time.LocalDateTime.now().format(
-            java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
-        );
+                java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
         activityList.getItems().add(0, "[" + timestamp + "] " + activity);
-        
+
         // Limitar a 100 actividades
         if (activityList.getItems().size() > 100) {
             activityList.getItems().remove(activityList.getItems().size() - 1);
@@ -343,7 +344,7 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
             statusLabel.setText(status);
         }
     }
-    
+
     private String getAvailableIPs() {
         List<String> ips = new ArrayList<>();
         try {
@@ -417,15 +418,15 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
                     break;
                 case MESSAGE_RECEIVED:
                     if (event.getData() instanceof com.whatsapp.service.ChatService.ChatMessage) {
-                        com.whatsapp.service.ChatService.ChatMessage msg = 
-                            (com.whatsapp.service.ChatService.ChatMessage) event.getData();
+                        com.whatsapp.service.ChatService.ChatMessage msg = (com.whatsapp.service.ChatService.ChatMessage) event
+                                .getData();
                         addActivity(resolveDisplayName(msg.getSource()) + ": Envió mensaje");
                     }
                     break;
                 case FILE_PROGRESS:
                     if (event.getData() instanceof com.whatsapp.service.FileTransferService.FileProgress) {
-                        com.whatsapp.service.FileTransferService.FileProgress progress = 
-                            (com.whatsapp.service.FileTransferService.FileProgress) event.getData();
+                        com.whatsapp.service.FileTransferService.FileProgress progress = (com.whatsapp.service.FileTransferService.FileProgress) event
+                                .getData();
                         if (progress.getProgress() == 100.0) {
                             addActivity(resolveDisplayName(event.getSource()) + ": Archivo transferido completado");
                         }
@@ -435,14 +436,15 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
                     addActivity(resolveDisplayName(event.getSource()) + ": Videollamada activa");
                     break;
                 case ROOM_CREATED:
-                    System.out.println("[ServerView] Evento ROOM_CREATED recibido, data type: " + 
-                        (event.getData() != null ? event.getData().getClass().getName() : "null"));
+                    System.out.println("[ServerView] Evento ROOM_CREATED recibido, data type: " +
+                            (event.getData() != null ? event.getData().getClass().getName() : "null"));
                     if (event.getData() instanceof Room) {
                         Room room = (Room) event.getData();
-                        System.out.println("[ServerView] Room recibido: " + room.getName() + ", Estado: " + room.getEstado());
+                        System.out.println(
+                                "[ServerView] Room recibido: " + room.getName() + ", Estado: " + room.getEstado());
                         String creatorName = room.getCreatorUsername() != null
-                            ? room.getCreatorUsername()
-                            : aliasRegistry.getAliasOrDefault(room.getCreatorConnectionId());
+                                ? room.getCreatorUsername()
+                                : aliasRegistry.getAliasOrDefault(room.getCreatorConnectionId());
                         String reason = room.getRequestMessage();
                         StringBuilder activity = new StringBuilder();
                         activity.append("Nueva solicitud de room: ").append(room.getName())
@@ -479,7 +481,7 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
         for (ControlService.UserDescriptor descriptor : descriptors) {
             String connectionId = descriptor.getConnectionId();
             String displayName = descriptor.getDisplayName();
-            
+
             // Si el usuario ya está en la lista, actualizar su nombre
             if (connectedUserMap.containsKey(connectionId)) {
                 String oldName = connectedUserMap.get(connectionId);
@@ -596,6 +598,7 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
             try {
                 controlService.approveRoom(selected.getId());
                 addActivity("Room '" + selected.getName() + "' aprobado");
+                pendingRoomsList.getSelectionModel().clearSelection();
                 refreshRoomsList();
             } catch (IOException e) {
                 showAlert("Error", "No se pudo aprobar el room: " + e.getMessage(), Alert.AlertType.ERROR);
@@ -611,6 +614,7 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
             try {
                 controlService.rejectRoom(selected.getId());
                 addActivity("Room '" + selected.getName() + "' rechazado");
+                pendingRoomsList.getSelectionModel().clearSelection();
                 refreshRoomsList();
             } catch (IOException e) {
                 showAlert("Error", "No se pudo rechazar el room: " + e.getMessage(), Alert.AlertType.ERROR);
@@ -641,10 +645,11 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
             List<Room> pending = roomService.getPendingRooms();
             System.out.println("[ServerView] Rooms pendientes encontrados: " + pending.size());
             for (Room r : pending) {
-                System.out.println("[ServerView]   - " + r.getName() + " (ID: " + r.getId() + ", Estado: " + r.getEstado() + ")");
+                System.out.println(
+                        "[ServerView]   - " + r.getName() + " (ID: " + r.getId() + ", Estado: " + r.getEstado() + ")");
             }
             pendingRoomsList.getItems().setAll(pending);
-            
+
             List<Room> active = roomService.getActiveRooms();
             System.out.println("[ServerView] Rooms activos encontrados: " + active.size());
             activeRoomsList.getItems().setAll(active);
@@ -680,7 +685,7 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
             if (roomOpt.isPresent()) {
                 Room room = roomOpt.get();
                 String serverMemberId = "SERVER_" + currentUser.getUsername();
-                
+
                 // Si no es miembro, unirse primero
                 if (!room.hasMember(serverMemberId)) {
                     roomService.addMemberToRoom(room.getId(), serverMemberId);
@@ -734,4 +739,3 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
         }
     }
 }
-
