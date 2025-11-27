@@ -180,7 +180,10 @@ public class RoomChatView extends BorderPane implements NetworkEventObserver {
 
         try {
             String encodedMessage = Base64.getEncoder().encodeToString(message.getBytes(StandardCharsets.UTF_8));
-            String payload = Base64.getEncoder().encodeToString(String.valueOf(room.getId()).getBytes(StandardCharsets.UTF_8)) + "|" + encodedMessage;
+            String roomIdEncoded = Base64.getEncoder().encodeToString(String.valueOf(room.getId()).getBytes(StandardCharsets.UTF_8));
+            String senderId = isServerMode ? "SERVER_" + currentUser.getUsername() : currentUser.getUsername();
+            aliasRegistry.registerAlias(senderId, currentUser.getUsername());
+            String payload = roomIdEncoded + "|" + Base64.getEncoder().encodeToString(senderId.getBytes(StandardCharsets.UTF_8)) + "|" + encodedMessage;
             if (isServerMode) {
                 for (String memberConnectionId : getDeliverableMembers()) {
                     controlService.sendControlMessage(memberConnectionId, ControlService.CONTROL_ROOM_MESSAGE, payload);

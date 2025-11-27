@@ -646,7 +646,12 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
             for (Room r : pending) {
                 System.out.println("[ServerView]   - " + r.getName() + " (ID: " + r.getId() + ", Estado: " + r.getEstado() + ")");
             }
-            pendingRoomsList.getItems().setAll(pending);
+            if (pending.isEmpty() && !pendingRoomsList.getItems().isEmpty()) {
+                // Mantener los que llegaron por eventos si la BD todavía no refleja
+                pendingRoomsList.getItems().setAll(pendingRoomsList.getItems());
+            } else {
+                pendingRoomsList.getItems().setAll(pending);
+            }
             
             List<Room> active = roomService.getActiveRooms();
             System.out.println("[ServerView] Rooms activos encontrados: " + active.size());
