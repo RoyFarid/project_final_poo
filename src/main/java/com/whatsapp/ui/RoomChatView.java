@@ -44,6 +44,7 @@ public class RoomChatView extends BorderPane implements NetworkEventObserver {
     private ToggleButton muteSpeakerButton;
     private final UserAliasRegistry aliasRegistry;
     private final Map<String, String> memberConnectionIds = new HashMap<>();
+    private final Map<String, String> pendingFileDownloads = new HashMap<>(); // fileName -> filePath
     private boolean isServerMode;
     private final ControlService controlService;
 
@@ -100,6 +101,14 @@ public class RoomChatView extends BorderPane implements NetworkEventObserver {
         messagesList.setPrefWidth(400);
         messagesList.setPrefHeight(350);
         messagesList.setStyle("-fx-font-size: 12px;");
+        messagesList.setOnMouseClicked(e -> {
+            if (e.getClickCount() == 2) { // Doble click para descargar
+                String selected = messagesList.getSelectionModel().getSelectedItem();
+                if (selected != null && selected.contains("📎")) {
+                    handleFileDownload(selected);
+                }
+            }
+        });
 
         // Lista de miembros
         VBox membersBox = new VBox(5);
@@ -211,20 +220,44 @@ public class RoomChatView extends BorderPane implements NetworkEventObserver {
 
         if (file != null) {
             try {
-                // Enviar archivo a todos los miembros del room
-                for (String memberConnectionId : getDeliverableMembers()) {
-                    if (isServerMode) {
-                        // Si es servidor, enviar directamente
+                long fileSize = file.length();
+                String fileName = file.getName();
+                
+                // Enviar notificación de archivo como mensaje de sala
+                String roomIdEncoded = Base64.getEncoder().encodeToString(String.valueOf(room.getId()).getBytes(StandardCharsets.UTF_8));
+                String senderId = isServerMode ? "SERVER_" + currentUser.getUsername() : currentUser.getUsername();
+                aliasRegistry.registerAlias(senderId, currentUser.getUsername());
+                String fileNameEncoded = Base64.getEncoder().encodeToString(fileName.getBytes(StandardCharsets.UTF_8));
+                String fileSizeEncoded = Base64.getEncoder().encodeToString(String.valueOf(fileSize).getBytes(StandardCharsets.UTF_8));
+                String senderIdEncoded = Base64.getEncoder().encodeToString(senderId.getBytes(StandardCharsets.UTF_8));
+                
+                String payload = roomIdEncoded + "|" + senderIdEncoded + "|" + fileNameEncoded + "|" + fileSizeEncoded + "|";
+                
+                if (isServerMode) {
+                    // Notificar a todos los miembros
+                    for (String memberConnectionId : getDeliverableMembers()) {
+                        controlService.sendControlMessage(memberConnectionId, ControlService.CONTROL_ROOM_FILE, payload);
+                    }
+                    // También enviar el archivo físico
+                    for (String memberConnectionId : getDeliverableMembers()) {
                         networkFacade.sendFile(memberConnectionId, memberConnectionId, file.getAbsolutePath(), currentUser.getId());
-                    } else {
-                        // Si es cliente, usar el servidor como intermediario
-                        String serverConnectionId = networkFacade.getPrimaryConnectionId();
-                        if (serverConnectionId != null) {
+                    }
+                } else {
+                    // Si es cliente, usar el servidor como intermediario
+                    String serverConnectionId = networkFacade.getPrimaryConnectionId();
+                    if (serverConnectionId != null) {
+                        controlService.sendControlMessage(serverConnectionId, ControlService.CONTROL_ROOM_FILE, payload);
+                        // También enviar el archivo físico
+                        for (String memberConnectionId : getDeliverableMembers()) {
                             networkFacade.sendFile(serverConnectionId, memberConnectionId, file.getAbsolutePath(), currentUser.getId());
                         }
                     }
                 }
-                addMessage("Archivo enviado a todos los miembros: " + file.getName());
+                
+                // Mostrar en el chat local
+                Platform.runLater(() -> {
+                    addFileMessage(currentUser.getUsername(), fileName, fileSize, null, true);
+                });
             } catch (Exception e) {
                 showAlert("Error", "No se pudo enviar el archivo: " + e.getMessage(), Alert.AlertType.ERROR);
             }
@@ -292,6 +325,43 @@ public class RoomChatView extends BorderPane implements NetworkEventObserver {
         messagesList.scrollTo(messagesList.getItems().size() - 1);
     }
 
+    private void addFileMessage(String senderName, String fileName, long fileSize, String filePath, boolean isSent) {
+        String timestamp = java.time.LocalDateTime.now().format(
+            java.time.format.DateTimeFormatter.ofPattern("HH:mm")
+        );
+        String sizeStr = formatFileSize(fileSize);
+        String prefix = isSent ? "Yo" : senderName;
+        String message;
+        if (filePath != null && !isSent) {
+            message = String.format("[%s] %s: 📎 %s (%s) [Disponible para descargar]", timestamp, prefix, fileName, sizeStr);
+            // Guardar información del archivo para descarga
+            pendingFileDownloads.put(fileName, filePath);
+        } else {
+            message = String.format("[%s] %s: 📎 %s (%s)", timestamp, prefix, fileName, sizeStr);
+        }
+        messagesList.getItems().add(message);
+        messagesList.scrollTo(messagesList.getItems().size() - 1);
+    }
+
+    private String formatFileSize(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return String.format("%.2f KB", bytes / 1024.0);
+        if (bytes < 1024 * 1024 * 1024) return String.format("%.2f MB", bytes / (1024.0 * 1024.0));
+        return String.format("%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0));
+    }
+
+    private void refreshFileMessage(String fileName, String filePath) {
+        // Buscar el mensaje que contiene este archivo y actualizarlo si es necesario
+        for (int i = 0; i < messagesList.getItems().size(); i++) {
+            String item = messagesList.getItems().get(i);
+            if (item.contains(fileName) && !item.contains("[Disponible para descargar]")) {
+                String updated = item + " [Disponible para descargar]";
+                messagesList.getItems().set(i, updated);
+                break;
+            }
+        }
+    }
+
     private void refreshMembersList() {
         membersList.getItems().clear();
         for (String displayName : memberConnectionIds.values()) {
@@ -351,10 +421,28 @@ public class RoomChatView extends BorderPane implements NetworkEventObserver {
                             String displayName = memberConnectionIds.get(event.getSource());
                             if (progress.isIncoming()) {
                                 handleIncomingFile(progress, displayName);
+                                // Guardar la ruta del archivo recibido para poder descargarlo
+                                if (progress.getLocalPath() != null) {
+                                    pendingFileDownloads.put(progress.getFileName(), progress.getLocalPath());
+                                    // Actualizar el mensaje si ya existe uno para este archivo
+                                    refreshFileMessage(progress.getFileName(), progress.getLocalPath());
+                                }
                             } else {
-                                addMessage("Yo: Archivo enviado - " + progress.getFileName());
+                                // Archivo enviado - ya se muestra en sendFileToAll
                             }
                         }
+                    }
+                }
+                case ROOM_FILE -> {
+                    if (event.getData() instanceof ControlService.RoomFileMessage roomFileMsg
+                        && roomFileMsg.getRoomId().equals(room.getId())) {
+                        String senderId = roomFileMsg.getSenderConnectionId();
+                        memberConnectionIds.put(senderId, aliasRegistry.getAliasOrDefault(senderId));
+                        refreshMembersList();
+                        String senderName = aliasRegistry.getAliasOrDefault(senderId);
+                        boolean isMine = senderId.equals(isServerMode ? "SERVER_" + currentUser.getUsername() : currentUser.getUsername());
+                        addFileMessage(senderName, roomFileMsg.getFileName(), roomFileMsg.getFileSize(), 
+                                     roomFileMsg.getFilePath(), isMine);
                     }
                 }
                 case VIDEO_FRAME -> {
@@ -413,29 +501,63 @@ public class RoomChatView extends BorderPane implements NetworkEventObserver {
             return;
         }
 
-        DirectoryChooser dirChooser = new DirectoryChooser();
-        dirChooser.setTitle("Selecciona la carpeta para guardar el archivo");
-        File selectedDir = dirChooser.showDialog(getScene().getWindow());
+        // Guardar el archivo para descarga posterior (no preguntar inmediatamente)
+        pendingFileDownloads.put(progress.getFileName(), localPath);
+        addFileMessage(senderName, progress.getFileName(), progress.getTotalBytes(), localPath, false);
+    }
 
-        if (selectedDir == null) {
-            addMessage(senderName + ": Archivo recibido - " + progress.getFileName()
-                + " (aún en " + localPath + ")");
+    private void handleFileDownload(String messageText) {
+        // Extraer el nombre del archivo del mensaje
+        // Formato: "[HH:mm] Sender: 📎 fileName (size) [Disponible para descargar]"
+        if (!messageText.contains("📎")) {
             return;
         }
-
-        File destination = new File(selectedDir, progress.getFileName());
-
+        
         try {
+            // Extraer nombre del archivo
+            int fileIconIndex = messageText.indexOf("📎");
+            int startIndex = fileIconIndex + 2; // Después del emoji y espacio
+            int endIndex = messageText.indexOf(" (", startIndex);
+            if (endIndex == -1) {
+                endIndex = messageText.indexOf(" [", startIndex);
+            }
+            if (endIndex == -1) {
+                endIndex = messageText.length();
+            }
+            String fileName = messageText.substring(startIndex, endIndex).trim();
+            
+            // Buscar el archivo en los pendientes
+            String filePath = pendingFileDownloads.get(fileName);
+            if (filePath == null || !new File(filePath).exists()) {
+                showAlert("Error", "El archivo no está disponible para descargar.", Alert.AlertType.WARNING);
+                return;
+            }
+            
+            // Pedir al usuario dónde guardar el archivo
+            DirectoryChooser dirChooser = new DirectoryChooser();
+            dirChooser.setTitle("Selecciona la carpeta para guardar: " + fileName);
+            File selectedDir = dirChooser.showDialog(getScene().getWindow());
+            
+            if (selectedDir == null) {
+                return; // Usuario canceló
+            }
+            
+            File sourceFile = new File(filePath);
+            File destination = new File(selectedDir, fileName);
+            
+            // Copiar el archivo
             Path destPath = destination.toPath();
             Path parent = destPath.getParent();
             if (parent != null) {
                 Files.createDirectories(parent);
             }
-            Files.copy(Paths.get(localPath), destPath, StandardCopyOption.REPLACE_EXISTING);
-            addMessage(senderName + ": Archivo guardado en " + destPath);
-            Files.deleteIfExists(Paths.get(localPath));
-        } catch (IOException e) {
-            showAlert("Error", "No se pudo guardar el archivo: " + e.getMessage(), Alert.AlertType.ERROR);
+            Files.copy(sourceFile.toPath(), destPath, StandardCopyOption.REPLACE_EXISTING);
+            
+            showAlert("Éxito", "Archivo guardado en: " + destPath, Alert.AlertType.INFORMATION);
+            addMessage("✓ Archivo descargado: " + fileName);
+            
+        } catch (Exception e) {
+            showAlert("Error", "No se pudo descargar el archivo: " + e.getMessage(), Alert.AlertType.ERROR);
         }
     }
 }

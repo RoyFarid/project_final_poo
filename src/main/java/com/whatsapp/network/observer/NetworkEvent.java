@@ -17,6 +17,7 @@ public class NetworkEvent {
         ROOM_MEMBER_ADDED,
         ROOM_MEMBER_REMOVED,
         ROOM_MESSAGE,
+        ROOM_FILE,
         ROOM_LIST
     }
 

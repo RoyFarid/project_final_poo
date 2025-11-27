@@ -54,6 +54,7 @@ public class ControlService {
     public static final byte CONTROL_ADMIN_BLOCK_MESSAGES = 22;
     public static final byte CONTROL_ADMIN_UNBLOCK_MESSAGES = 23;
     public static final byte CONTROL_ROOM_MESSAGE = 24;
+    public static final byte CONTROL_ROOM_FILE = 25;
 
     public ControlService() {
         this.connectionManager = ConnectionManager.getInstance();
@@ -362,6 +363,20 @@ public class ControlService {
                                 eventAggregator.publish(new NetworkEvent(
                                     NetworkEvent.EventType.ROOM_MESSAGE,
                                     roomMsg,
+                                    source
+                                ));
+                            }
+                        }
+                        break;
+                    case CONTROL_ROOM_FILE:
+                        if (connectionManager.isServerMode()) {
+                            handleRoomFileMessage(controlData, source);
+                        } else {
+                            RoomFileMessage roomFileMsg = parseRoomFileMessage(controlData);
+                            if (roomFileMsg != null) {
+                                eventAggregator.publish(new NetworkEvent(
+                                    NetworkEvent.EventType.ROOM_FILE,
+                                    roomFileMsg,
                                     source
                                 ));
                             }
@@ -866,6 +881,76 @@ public class ControlService {
         }
     }
 
+    private void handleRoomFileMessage(String payload, String senderConnectionId) {
+        try {
+            String[] parts = payload.split("\\|", -1);
+            if (parts.length < 4) {
+                return;
+            }
+            Long roomId = Long.parseLong(decodeCredential(parts[0]));
+            String senderEncoded = parts.length >= 5 ? parts[1] : encodeCredential(senderConnectionId);
+            String fileName = decodeCredential(parts.length >= 5 ? parts[2] : parts[1]);
+            long fileSize = Long.parseLong(decodeCredential(parts.length >= 5 ? parts[3] : parts[2]));
+            String filePath = parts.length >= 5 ? (parts.length > 4 && !parts[4].isEmpty() ? decodeCredential(parts[4]) : null) : null;
+
+            Optional<Room> roomOpt = roomService.getRoom(roomId);
+            if (roomOpt.isEmpty()) {
+                return;
+            }
+            Room room = roomOpt.get();
+            
+            // Publicar para UI del servidor
+            RoomFileMessage selfMsg = new RoomFileMessage(
+                roomId,
+                decodeCredential(senderEncoded),
+                fileName,
+                fileSize,
+                filePath
+            );
+            eventAggregator.publish(new NetworkEvent(
+                NetworkEvent.EventType.ROOM_FILE,
+                selfMsg,
+                senderConnectionId
+            ));
+            
+            // Reenviar a todos los miembros del room
+            for (String memberId : room.getMembers()) {
+                if (memberId == null || memberId.equals(senderConnectionId) || memberId.startsWith("SERVER_")) {
+                    continue;
+                }
+                if (!connectionManager.getConnectedClients().contains(memberId)) {
+                    continue;
+                }
+                String forward = encodeCredential(String.valueOf(roomId)) + "|" +
+                                 senderEncoded + "|" +
+                                 encodeCredential(fileName) + "|" +
+                                 encodeCredential(String.valueOf(fileSize)) + "|" +
+                                 (filePath != null ? encodeCredential(filePath) : "");
+                sendControlMessage(memberId, CONTROL_ROOM_FILE, forward);
+            }
+        } catch (Exception e) {
+            logger.warn("Error manejando mensaje de archivo de room", e);
+        }
+    }
+
+    private RoomFileMessage parseRoomFileMessage(String payload) {
+        try {
+            String[] parts = payload.split("\\|", 5);
+            if (parts.length < 4) {
+                return null;
+            }
+            Long roomId = Long.parseLong(decodeCredential(parts[0]));
+            String sender = decodeCredential(parts[1]);
+            String fileName = decodeCredential(parts[2]);
+            long fileSize = Long.parseLong(decodeCredential(parts[3]));
+            String filePath = parts.length > 4 && !parts[4].isEmpty() ? decodeCredential(parts[4]) : null;
+            return new RoomFileMessage(roomId, sender, fileName, fileSize, filePath);
+        } catch (Exception e) {
+            logger.warn("No se pudo parsear mensaje de archivo de room", e);
+            return null;
+        }
+    }
+
     public void sendRoomList(String connectionId) throws IOException {
         List<Room> activeRooms = roomService.getActiveRooms();
         // Serializar lista de rooms a JSON simple, incluyendo miembros
@@ -912,6 +997,42 @@ public class ControlService {
 
         public String getMessage() {
             return message;
+        }
+    }
+
+    public static class RoomFileMessage {
+        private final Long roomId;
+        private final String senderConnectionId;
+        private final String fileName;
+        private final long fileSize;
+        private final String filePath; // Ruta local del archivo (para el receptor)
+
+        public RoomFileMessage(Long roomId, String senderConnectionId, String fileName, long fileSize, String filePath) {
+            this.roomId = roomId;
+            this.senderConnectionId = senderConnectionId;
+            this.fileName = fileName;
+            this.fileSize = fileSize;
+            this.filePath = filePath;
+        }
+
+        public Long getRoomId() {
+            return roomId;
+        }
+
+        public String getSenderConnectionId() {
+            return senderConnectionId;
+        }
+
+        public String getFileName() {
+            return fileName;
+        }
+
+        public long getFileSize() {
+            return fileSize;
+        }
+
+        public String getFilePath() {
+            return filePath;
         }
     }
 

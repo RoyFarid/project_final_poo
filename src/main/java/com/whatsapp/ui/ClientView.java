@@ -375,6 +375,8 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
                 snapshot.getName(),
                 snapshot.getMembers(),
                 serverConnectionId,
+                currentUser,
+                networkFacade,
                 () -> openRoomChats.remove(snapshot.getId())
             );
             openRoomChats.put(snapshot.getId(), view);
