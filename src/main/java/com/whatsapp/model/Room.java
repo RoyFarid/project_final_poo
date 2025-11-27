@@ -18,6 +18,7 @@ public class Room {
     private Set<String> members; // Connection IDs de los miembros
     private String serverUsername; // Username del servidor que gestiona este room
     private String requestMessage; // Mensaje opcional enviado con la solicitud
+    private boolean includeServer; // Si el cliente quiere incluir al servidor en el room
 
     public enum EstadoRoom {
         PENDIENTE, // Esperando aprobación del servidor
@@ -123,5 +124,13 @@ public class Room {
 
     public void setRequestMessage(String requestMessage) {
         this.requestMessage = requestMessage;
+    }
+
+    public boolean isIncludeServer() {
+        return includeServer;
+    }
+
+    public void setIncludeServer(boolean includeServer) {
+        this.includeServer = includeServer;
     }
 }

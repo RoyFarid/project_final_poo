@@ -614,7 +614,7 @@ public class ControlService {
             logger.info("Procesando solicitud de creación de room desde: " + source);
             logger.info("Payload recibido: " + payload);
             
-            // Formato: roomName|creatorUsername|member1,member2,member3|mensaje
+            // Formato: roomName|creatorUsername|member1,member2,member3|mensaje|includeServer
             String[] parts = payload.split("\\|");
             if (parts.length < 2) {
                 sendControlMessage(source, CONTROL_ROOM_CREATE_RESPONSE, 
@@ -626,6 +626,7 @@ public class ControlService {
             String creatorUsername = decodeCredential(parts[1]);
             Set<String> members = new java.util.HashSet<>();
             String requestMessage = parts.length > 3 ? decodeCredential(parts[3]) : "";
+            boolean includeServer = parts.length > 4 && "true".equals(parts[4]);
             
             if (parts.length > 2) {
                 String membersStr = decodeCredential(parts[2]);
@@ -639,7 +640,7 @@ public class ControlService {
                 }
             }
 
-            logger.info("Room name: " + roomName + ", Creator: " + creatorUsername + ", Members: " + members);
+            logger.info("Room name: " + roomName + ", Creator: " + creatorUsername + ", Members: " + members + ", IncludeServer: " + includeServer);
             
             // Verificar que RoomService tenga configurado el serverUsername
             String serverUsername = roomService.getServerUsername();
@@ -652,7 +653,7 @@ public class ControlService {
             
             logger.info("ServerUsername configurado: " + serverUsername);
             
-            Room room = roomService.createRoomRequest(roomName, source, creatorUsername, members, requestMessage);
+            Room room = roomService.createRoomRequest(roomName, source, creatorUsername, members, requestMessage, includeServer);
             logger.info("Room creado con ID: " + room.getId() + ", Estado: " + room.getEstado());
             
             // Publicar evento para que el servidor vea la solicitud pendiente

@@ -139,9 +139,20 @@ public class DatabaseManager {
                         Estado VARCHAR(20) NOT NULL DEFAULT 'PENDIENTE',
                         FechaCreacion DATETIME NOT NULL,
                         ServerUsername VARCHAR(50) NOT NULL,
+                        RequestMessage TEXT,
+                        IncludeServer BOOLEAN DEFAULT FALSE,
                         INDEX idx_server (ServerUsername),
                         INDEX idx_estado (Estado)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """;
+                
+                // Agregar columnas si no existen (para bases de datos existentes)
+                String addRequestMessageColumn = """
+                    ALTER TABLE Room ADD COLUMN IF NOT EXISTS RequestMessage TEXT
+                """;
+                
+                String addIncludeServerColumn = """
+                    ALTER TABLE Room ADD COLUMN IF NOT EXISTS IncludeServer BOOLEAN DEFAULT FALSE
                 """;
 
                 // Tabla RoomMember
@@ -160,6 +171,19 @@ public class DatabaseManager {
                 stmt.execute(createTransferenciaTable);
                 stmt.execute(createRoomTable);
                 stmt.execute(createRoomMemberTable);
+                
+                // Intentar agregar columnas nuevas (ignorar si ya existen)
+                try {
+                    stmt.execute(addRequestMessageColumn);
+                } catch (SQLException ignored) {
+                    // La columna ya existe o la sintaxis no es soportada
+                }
+                
+                try {
+                    stmt.execute(addIncludeServerColumn);
+                } catch (SQLException ignored) {
+                    // La columna ya existe o la sintaxis no es soportada
+                }
 
                 // Crear índices adicionales (MySQL no soporta IF NOT EXISTS en CREATE INDEX)
                 // El índice único ya está definido en la tabla Usuario con UNIQUE

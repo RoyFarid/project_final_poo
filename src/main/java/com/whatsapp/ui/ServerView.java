@@ -174,11 +174,15 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
                         ? room.getCreatorUsername()
                         : aliasRegistry.getAliasOrDefault(room.getCreatorConnectionId());
                     String reason = room.getRequestMessage();
-                    String summary = room.getName() + " (por " + creatorName + ")";
-                    if (reason != null && !reason.isBlank()) {
-                        summary += " - Motivo: " + reason;
+                    StringBuilder summary = new StringBuilder();
+                    summary.append(room.getName()).append(" (por ").append(creatorName).append(")");
+                    if (room.isIncludeServer()) {
+                        summary.append(" [Incluir Admin]");
                     }
-                    setText(summary);
+                    if (reason != null && !reason.isBlank()) {
+                        summary.append(" - Motivo: ").append(reason);
+                    }
+                    setText(summary.toString());
                 }
             }
         });
@@ -440,11 +444,16 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
                             ? room.getCreatorUsername()
                             : aliasRegistry.getAliasOrDefault(room.getCreatorConnectionId());
                         String reason = room.getRequestMessage();
-                        String activity = "Nueva solicitud de room: " + room.getName() + " (por " + creatorName + ")";
-                        if (reason != null && !reason.isBlank()) {
-                            activity += " - Motivo: " + reason;
+                        StringBuilder activity = new StringBuilder();
+                        activity.append("Nueva solicitud de room: ").append(room.getName())
+                                .append(" (por ").append(creatorName).append(")");
+                        if (room.isIncludeServer()) {
+                            activity.append(" [Quiere incluir al Admin]");
                         }
-                        addActivity(activity);
+                        if (reason != null && !reason.isBlank()) {
+                            activity.append(" - Motivo: ").append(reason);
+                        }
+                        addActivity(activity.toString());
                         refreshRoomsList();
                     } else {
                         System.out.println("[ServerView] Data no es instancia de Room: " + event.getData());

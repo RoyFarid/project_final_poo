@@ -7,7 +7,6 @@ import com.whatsapp.network.observer.NetworkEvent;
 import com.whatsapp.network.observer.NetworkEventObserver;
 import com.whatsapp.service.ControlService;
 import com.whatsapp.service.NetworkFacade;
-import com.whatsapp.service.RoomService;
 import com.whatsapp.service.UserAliasRegistry;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
@@ -258,6 +257,10 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
             }
         });
 
+        // Checkbox para incluir al servidor/admin
+        CheckBox includeServerCheckbox = new CheckBox("Incluir al Servidor/Admin en el room");
+        includeServerCheckbox.setSelected(false);
+
         TextArea reasonField = new TextArea();
         reasonField.setPromptText("Mensaje para el servidor (motivo de la solicitud)");
         reasonField.setWrapText(true);
@@ -268,6 +271,7 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
             roomNameField,
             new Label("Selecciona miembros (Ctrl+Click para multiples):"),
             memberSelectionList,
+            includeServerCheckbox,
             new Label("Mensaje para el administrador:"),
             reasonField
         );
@@ -286,33 +290,37 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
                     selectedMembers.add(desc.getConnectionId());
                 }
 
-                return new RoomCreationData(roomName, selectedMembers, reasonField.getText().trim());
+                // Agregar servidor si está seleccionado
+                boolean includeServer = includeServerCheckbox.isSelected();
+
+                return new RoomCreationData(roomName, selectedMembers, reasonField.getText().trim(), includeServer);
             }
             return null;
         });
 
         dialog.showAndWait().ifPresent(data -> {
-            createRoom(data.roomName, data.members, data.requestMessage);
+            createRoom(data.roomName, data.members, data.requestMessage, data.includeServer);
         });
     }
 
-    private void createRoom(String roomName, Set<String> memberConnectionIds, String requestMessage) {
+    private void createRoom(String roomName, Set<String> memberConnectionIds, String requestMessage, boolean includeServer) {
         try {
             String serverConnectionId = networkFacade.getPrimaryConnectionId();
             if (serverConnectionId == null) {
-                showAlert("Error", "No hay conexiÃ³n activa con el servidor.", Alert.AlertType.ERROR);
+                showAlert("Error", "No hay conexión activa con el servidor.", Alert.AlertType.ERROR);
                 return;
             }
 
-            // Construir payload: roomName|creatorUsername|member1,member2,member3|mensaje
+            // Construir payload: roomName|creatorUsername|member1,member2,member3|mensaje|includeServer
             String membersStr = String.join(",", memberConnectionIds);
             String payload = encodeBase64(roomName) + "|" + 
                            encodeBase64(currentUser.getUsername()) + "|" + 
                            encodeBase64(membersStr) + "|" +
-                           encodeBase64(requestMessage == null ? "" : requestMessage);
+                           encodeBase64(requestMessage == null ? "" : requestMessage) + "|" +
+                           (includeServer ? "true" : "false");
 
             controlService.sendControlMessage(serverConnectionId, ControlService.CONTROL_ROOM_CREATE_REQUEST, payload);
-            updateStatus("Solicitud de room '" + roomName + "' enviada. Esperando aprobaciÃ³n...");
+            updateStatus("Solicitud de room '" + roomName + "' enviada. Esperando aprobación...");
         } catch (IOException e) {
             showAlert("Error", "No se pudo crear el room: " + e.getMessage(), Alert.AlertType.ERROR);
         }
@@ -353,11 +361,13 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
         final String roomName;
         final Set<String> members;
         final String requestMessage;
+        final boolean includeServer;
 
-        RoomCreationData(String roomName, Set<String> members, String requestMessage) {
+        RoomCreationData(String roomName, Set<String> members, String requestMessage, boolean includeServer) {
             this.roomName = roomName;
             this.members = members;
             this.requestMessage = requestMessage;
+            this.includeServer = includeServer;
         }
     }
 

@@ -6,7 +6,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.sql.*;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -116,8 +115,8 @@ public class RoomRepository implements IRepository<Room, Long> {
 
     @Override
     public Room save(Room room) {
-        String sql = "INSERT INTO Room (Name, CreatorConnectionId, CreatorUsername, Estado, FechaCreacion, ServerUsername) " +
-                     "VALUES (?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO Room (Name, CreatorConnectionId, CreatorUsername, Estado, FechaCreacion, ServerUsername, RequestMessage, IncludeServer) " +
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection conn = dbManager.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             pstmt.setString(1, room.getName());
@@ -126,6 +125,8 @@ public class RoomRepository implements IRepository<Room, Long> {
             pstmt.setString(4, room.getEstado().name());
             pstmt.setTimestamp(5, java.sql.Timestamp.valueOf(room.getFechaCreacion()));
             pstmt.setString(6, room.getServerUsername());
+            pstmt.setString(7, room.getRequestMessage());
+            pstmt.setBoolean(8, room.isIncludeServer());
             pstmt.executeUpdate();
             
             ResultSet rs = pstmt.getGeneratedKeys();
@@ -136,6 +137,7 @@ public class RoomRepository implements IRepository<Room, Long> {
             // Guardar miembros
             saveMembers(room);
             
+            logger.info("Room guardado: ID={}, Name={}, Estado={}", room.getId(), room.getName(), room.getEstado());
             return room;
         } catch (SQLException e) {
             logger.error("Error al guardar room", e);
@@ -272,7 +274,64 @@ public class RoomRepository implements IRepository<Room, Long> {
         }
         
         room.setServerUsername(rs.getString("ServerUsername"));
+        
+        // Cargar RequestMessage si existe
+        try {
+            room.setRequestMessage(rs.getString("RequestMessage"));
+        } catch (SQLException ignored) {
+            // Columna no existe en BD antigua
+        }
+        
+        // Cargar IncludeServer si existe
+        try {
+            room.setIncludeServer(rs.getBoolean("IncludeServer"));
+        } catch (SQLException ignored) {
+            // Columna no existe en BD antigua
+        }
+        
         return room;
+    }
+
+    /**
+     * Elimina todos los rooms de un servidor específico
+     */
+    public void deleteAllByServerUsername(String serverUsername) {
+        // Primero obtener IDs de rooms a eliminar
+        List<Long> roomIds = new ArrayList<>();
+        String selectSql = "SELECT Id FROM Room WHERE ServerUsername = ?";
+        try (Connection conn = dbManager.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(selectSql)) {
+            pstmt.setString(1, serverUsername);
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                roomIds.add(rs.getLong("Id"));
+            }
+        } catch (SQLException e) {
+            logger.error("Error al obtener rooms para eliminar", e);
+        }
+        
+        // Eliminar miembros de cada room
+        for (Long roomId : roomIds) {
+            String deleteMembersSql = "DELETE FROM RoomMember WHERE RoomId = ?";
+            try (Connection conn = dbManager.getConnection();
+                 PreparedStatement pstmt = conn.prepareStatement(deleteMembersSql)) {
+                pstmt.setLong(1, roomId);
+                pstmt.executeUpdate();
+            } catch (SQLException e) {
+                logger.error("Error al eliminar miembros del room " + roomId, e);
+            }
+        }
+        
+        // Eliminar rooms
+        String deleteRoomsSql = "DELETE FROM Room WHERE ServerUsername = ?";
+        try (Connection conn = dbManager.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(deleteRoomsSql)) {
+            pstmt.setString(1, serverUsername);
+            int deleted = pstmt.executeUpdate();
+            logger.info("Eliminados {} rooms del servidor {}", deleted, serverUsername);
+        } catch (SQLException e) {
+            logger.error("Error al eliminar rooms del servidor", e);
+        }
     }
 }
 

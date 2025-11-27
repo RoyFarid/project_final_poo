@@ -5,7 +5,6 @@ import com.whatsapp.network.ConnectionManager;
 import com.whatsapp.network.observer.EventAggregator;
 import com.whatsapp.network.observer.NetworkEvent;
 import com.whatsapp.repository.RoomRepository;
-import com.whatsapp.service.UserAliasRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,8 +49,8 @@ public class RoomService {
 
     public void setServerUsername(String serverUsername) {
         this.serverUsername = serverUsername;
-        // Cargar rooms activos del servidor en cache
-        refreshActiveRoomsCache();
+        // Limpiar rooms anteriores y cache
+        clearAllRoomsForServer();
     }
 
     public String getServerUsername() {
@@ -59,14 +58,37 @@ public class RoomService {
     }
 
     /**
+     * Limpia todos los rooms del servidor actual al iniciar.
+     * Los rooms son temporales y se eliminan al reiniciar el servidor.
+     */
+    public void clearAllRoomsForServer() {
+        if (serverUsername == null) {
+            return;
+        }
+        System.out.println("[RoomService] Limpiando rooms del servidor: " + serverUsername);
+        activeRoomsCache.clear();
+        requestMessages.clear();
+        roomRepository.deleteAllByServerUsername(serverUsername);
+        System.out.println("[RoomService] Rooms limpiados correctamente");
+    }
+
+    /**
      * Crea una solicitud de room (pendiente de aprobación)
      */
     public Room createRoomRequest(String roomName, String creatorConnectionId, String creatorUsername, Set<String> memberConnectionIds, String requestMessage) {
+        return createRoomRequest(roomName, creatorConnectionId, creatorUsername, memberConnectionIds, requestMessage, false);
+    }
+
+    /**
+     * Crea una solicitud de room (pendiente de aprobación) con opción de incluir servidor
+     */
+    public Room createRoomRequest(String roomName, String creatorConnectionId, String creatorUsername, Set<String> memberConnectionIds, String requestMessage, boolean includeServer) {
         System.out.println("[RoomService] createRoomRequest llamado");
         System.out.println("[RoomService] serverUsername: " + serverUsername);
         System.out.println("[RoomService] roomName: " + roomName);
         System.out.println("[RoomService] creatorConnectionId: " + creatorConnectionId);
         System.out.println("[RoomService] creatorUsername: " + creatorUsername);
+        System.out.println("[RoomService] includeServer: " + includeServer);
         
         if (serverUsername == null) {
             System.out.println("[RoomService] ERROR: serverUsername es null!");
@@ -75,6 +97,7 @@ public class RoomService {
 
         Room room = new Room(roomName, creatorConnectionId, creatorUsername, serverUsername);
         room.setRequestMessage(requestMessage);
+        room.setIncludeServer(includeServer);
         room.getMembers().addAll(memberConnectionIds);
         room.getMembers().add(creatorConnectionId); // El creador también es miembro
         
@@ -113,6 +136,14 @@ public class RoomService {
         }
 
         room.setEstado(Room.EstadoRoom.ACTIVO);
+        
+        // Si el cliente quería incluir al servidor, agregarlo automáticamente
+        if (room.isIncludeServer() && serverUsername != null) {
+            String serverMemberId = "SERVER_" + serverUsername;
+            room.addMember(serverMemberId);
+            System.out.println("[RoomService] Servidor agregado automáticamente al room: " + serverMemberId);
+        }
+        
         roomRepository.update(room);
         activeRoomsCache.put(room.getId(), room);
         requestMessages.remove(roomId);
