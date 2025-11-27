@@ -394,9 +394,13 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
                         availableRooms.put(room.getId(), room);
                         refreshRoomsList();
                         requestRoomList();
-                    } else if (event.getData() instanceof String) {
-                        // Parsear lista de rooms desde JSON
-                        // Por ahora, solo actualizamos la lista
+                    } else if (event.getData() instanceof String response) {
+                        if (response.startsWith("ERROR")) {
+                            // Respuesta de error del servidor
+                            var result = ControlService.OperationResultPayload.fromPayload(response);
+                            String message = result.getMessage();
+                            showAlert("Room", message.isBlank() ? "No se pudo crear el room" : message, Alert.AlertType.ERROR);
+                        }
                         requestRoomList();
                     }
                     break;

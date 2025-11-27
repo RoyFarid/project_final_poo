@@ -615,7 +615,7 @@ public class ControlService {
             logger.info("Payload recibido: " + payload);
             
             // Formato: roomName|creatorUsername|member1,member2,member3|mensaje|includeServer
-            String[] parts = payload.split("\\|");
+            String[] parts = payload.split("\\|", -1);
             if (parts.length < 2) {
                 sendControlMessage(source, CONTROL_ROOM_CREATE_RESPONSE, 
                     OperationResultPayload.error("Payload inválido").toPayload());
