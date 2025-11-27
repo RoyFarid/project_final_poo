@@ -155,6 +155,10 @@ public class DatabaseManager {
                     ALTER TABLE Room ADD COLUMN IF NOT EXISTS IncludeServer BOOLEAN DEFAULT FALSE
                 """;
 
+                String addServerUsernameColumn = """
+                    ALTER TABLE Room ADD COLUMN IF NOT EXISTS ServerUsername VARCHAR(50) NOT NULL DEFAULT ''
+                """;
+
                 // Tabla RoomMember
                 String createRoomMemberTable = """
                     CREATE TABLE IF NOT EXISTS RoomMember (
@@ -181,6 +185,12 @@ public class DatabaseManager {
                 
                 try {
                     stmt.execute(addIncludeServerColumn);
+                } catch (SQLException ignored) {
+                    // La columna ya existe o la sintaxis no es soportada
+                }
+
+                try {
+                    stmt.execute(addServerUsernameColumn);
                 } catch (SQLException ignored) {
                     // La columna ya existe o la sintaxis no es soportada
                 }
