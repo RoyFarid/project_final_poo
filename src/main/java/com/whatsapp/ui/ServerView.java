@@ -640,20 +640,20 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
     }
 
     private void refreshRoomsList() {
-        Platform.runLater(() -> {
-            System.out.println("[ServerView] Refrescando lista de rooms...");
-            List<Room> pending = roomService.getPendingRooms();
-            System.out.println("[ServerView] Rooms pendientes encontrados: " + pending.size());
-            for (Room r : pending) {
-                System.out.println(
-                        "[ServerView]   - " + r.getName() + " (ID: " + r.getId() + ", Estado: " + r.getEstado() + ")");
-            }
-            pendingRoomsList.getItems().setAll(pending);
 
-            List<Room> active = roomService.getActiveRooms();
-            System.out.println("[ServerView] Rooms activos encontrados: " + active.size());
-            activeRoomsList.getItems().setAll(active);
-        });
+        System.out.println("[ServerView] Refrescando lista de rooms...");
+        List<Room> pending = roomService.getPendingRooms();
+        System.out.println("[ServerView] Rooms pendientes encontrados: " + pending.size());
+        for (Room r : pending) {
+            System.out.println(
+                    "[ServerView]   - " + r.getName() + " (ID: " + r.getId() + ", Estado: " + r.getEstado() + ")");
+        }
+        pendingRoomsList.getItems().setAll(pending);
+
+        List<Room> active = roomService.getActiveRooms();
+        System.out.println("[ServerView] Rooms activos encontrados: " + active.size());
+        activeRoomsList.getItems().setAll(active);
+
     }
 
     private void handleJoinRoom() {
