@@ -118,7 +118,11 @@ public class NetworkFacade implements NetworkEventObserver {
 
     // Métodos de transferencia de archivos
     public void sendFile(String serverConnectionId, String targetConnectionId, String filePath, Long userId) throws IOException {
-        fileTransferService.sendFile(serverConnectionId, targetConnectionId, filePath, userId);
+        sendFile(serverConnectionId, targetConnectionId, filePath, userId, null);
+    }
+
+    public void sendFile(String serverConnectionId, String targetConnectionId, String filePath, Long userId, String senderConnectionId) throws IOException {
+        fileTransferService.sendFile(serverConnectionId, targetConnectionId, filePath, userId, senderConnectionId);
     }
 
     // Métodos de video

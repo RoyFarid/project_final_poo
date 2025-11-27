@@ -51,7 +51,8 @@ public class FileTransferService {
         this.traceId = logService.generateTraceId();
     }
 
-    public void sendFile(String serverConnectionId, String targetConnectionId, String filePath, Long userId) throws IOException {
+    public void sendFile(String serverConnectionId, String targetConnectionId, String filePath, Long userId,
+                         String senderConnectionIdOverride) throws IOException {
         Path path = Paths.get(filePath);
         if (!Files.exists(path)) {
             throw new FileNotFoundException("Archivo no encontrado: " + filePath);
@@ -82,8 +83,27 @@ public class FileTransferService {
         FileTransfer fileTransfer = new FileTransfer(transferId, path, fileSize, fileName, checksum);
         activeTransfers.put(transferId, fileTransfer);
 
+        boolean serverSendingDirect = connectionManager.isServerMode() && senderConnectionIdOverride != null;
+        byte outboundDirection = serverSendingDirect ? DIRECTION_SERVER_TO_CLIENT : DIRECTION_CLIENT_TO_SERVER;
+        String peerIdForPayload = serverSendingDirect
+            ? senderConnectionIdOverride
+            : targetConnectionId;
+
+        if (serverSendingDirect && (senderConnectionIdOverride == null || senderConnectionIdOverride.isBlank())) {
+            throw new IllegalArgumentException("senderConnectionIdOverride es requerido cuando el servidor envía archivos directamente");
+        }
+
         // Enviar metadata primero
-        sendFileMetadata(serverConnectionId, targetConnectionId, fileName, fileSize, checksum, transferId);
+        sendFileMetadata(
+            serverConnectionId,
+            targetConnectionId,
+            fileName,
+            fileSize,
+            checksum,
+            transferId,
+            outboundDirection,
+            peerIdForPayload
+        );
 
         // Enviar archivo en chunks
         try (FileInputStream fis = new FileInputStream(path.toFile());
@@ -100,7 +120,17 @@ public class FileTransferService {
                 byte[] chunk = new byte[bytesRead];
                 System.arraycopy(buffer, 0, chunk, 0, bytesRead);
 
-                sendFileChunk(serverConnectionId, targetConnectionId, transferId, chunkNumber, chunk, totalSent, fileSize);
+                sendFileChunk(
+                    serverConnectionId,
+                    targetConnectionId,
+                    transferId,
+                    chunkNumber,
+                    chunk,
+                    totalSent,
+                    fileSize,
+                    outboundDirection,
+                    peerIdForPayload
+                );
                 
                 totalSent += bytesRead;
                 chunkNumber++;
@@ -133,7 +163,8 @@ public class FileTransferService {
         }
     }
 
-    private void sendFileMetadata(String serverConnectionId, String targetConnectionId, String fileName, long fileSize, String checksum, int transferId) throws IOException {
+    private void sendFileMetadata(String serverConnectionId, String targetConnectionId, String fileName, long fileSize,
+                                  String checksum, int transferId, byte direction, String peerId) throws IOException {
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             try (DataOutputStream dos = new DataOutputStream(baos)) {
@@ -145,7 +176,7 @@ public class FileTransferService {
             }
 
             byte[] metadata = baos.toByteArray();
-            byte[] routedPayload = wrapRoutedPayload(DIRECTION_CLIENT_TO_SERVER, FRAME_METADATA, targetConnectionId, metadata);
+            byte[] routedPayload = wrapRoutedPayload(direction, FRAME_METADATA, peerId, metadata);
             int correlId = correlIdGenerator.incrementAndGet();
             int checksumInt = calculateChecksum(routedPayload);
             MessageHeader header = new MessageHeader(
@@ -167,7 +198,7 @@ public class FileTransferService {
     }
 
     private void sendFileChunk(String serverConnectionId, String targetConnectionId, int transferId, int chunkNumber, byte[] chunk,
-                              long offset, long totalSize) throws IOException {
+                              long offset, long totalSize, byte direction, String peerId) throws IOException {
         int attempts = 0;
         while (attempts < 5) {
             try {
@@ -182,7 +213,7 @@ public class FileTransferService {
                 }
                 byte[] chunkData = baos.toByteArray();
 
-                byte[] routedPayload = wrapRoutedPayload(DIRECTION_CLIENT_TO_SERVER, FRAME_CHUNK, targetConnectionId, chunkData);
+                byte[] routedPayload = wrapRoutedPayload(direction, FRAME_CHUNK, peerId, chunkData);
                 int correlId = correlIdGenerator.incrementAndGet();
                 int checksum = calculateChecksum(routedPayload);
                 MessageHeader header = new MessageHeader(
