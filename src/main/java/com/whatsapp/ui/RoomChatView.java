@@ -177,7 +177,7 @@ public class RoomChatView extends BorderPane implements NetworkEventObserver {
 
         try {
             // Enviar mensaje a todos los miembros del room
-            for (String memberConnectionId : memberConnectionIds.keySet()) {
+            for (String memberConnectionId : getDeliverableMembers()) {
                 if (isServerMode) {
                     // Si es servidor, enviar directamente
                     String encodedMessage = Base64.getEncoder().encodeToString(message.getBytes(StandardCharsets.UTF_8));
@@ -211,7 +211,7 @@ public class RoomChatView extends BorderPane implements NetworkEventObserver {
         if (file != null) {
             try {
                 // Enviar archivo a todos los miembros del room
-                for (String memberConnectionId : memberConnectionIds.keySet()) {
+                for (String memberConnectionId : getDeliverableMembers()) {
                     if (isServerMode) {
                         // Si es servidor, enviar directamente
                         networkFacade.sendFile(memberConnectionId, memberConnectionId, file.getAbsolutePath(), currentUser.getId());
@@ -233,7 +233,7 @@ public class RoomChatView extends BorderPane implements NetworkEventObserver {
     private void startVideoAudioToAll() {
         try {
             // Iniciar video y audio para todos los miembros del room
-            for (String memberConnectionId : memberConnectionIds.keySet()) {
+            for (String memberConnectionId : getDeliverableMembers()) {
                 if (isServerMode) {
                     // Si es servidor, iniciar directamente
                     networkFacade.startVideoCall(memberConnectionId, memberConnectionId);
@@ -258,6 +258,29 @@ public class RoomChatView extends BorderPane implements NetworkEventObserver {
         } catch (Exception e) {
             showAlert("Error", "No se pudo detener video/audio: " + e.getMessage(), Alert.AlertType.ERROR);
         }
+    }
+
+    /**
+     * Retorna los connectionIds a los que sí debemos enviar (omite IDs pseudo de servidor y desconectados).
+     */
+    private List<String> getDeliverableMembers() {
+        List<String> recipients = new ArrayList<>();
+        Set<String> connected = networkFacade.getConnectedClients();
+        for (String memberId : memberConnectionIds.keySet()) {
+            if (memberId == null) {
+                continue;
+            }
+            // Omitir el alias virtual del servidor
+            if (memberId.startsWith("SERVER_")) {
+                continue;
+            }
+            // En modo servidor, solo enviar a conexiones activas
+            if (isServerMode && (connected == null || !connected.contains(memberId))) {
+                continue;
+            }
+            recipients.add(memberId);
+        }
+        return recipients;
     }
 
     private void addMessage(String message) {
