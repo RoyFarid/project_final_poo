@@ -284,9 +284,10 @@ public class ControlService {
                         }
                         break;
                     case CONTROL_ROOM_JOIN_RESPONSE:
+                        RoomJoinResponse joinResponse = parseRoomJoinResponse(controlData);
                         eventAggregator.publish(new NetworkEvent(
                             NetworkEvent.EventType.ROOM_MEMBER_ADDED,
-                            controlData,
+                            joinResponse,
                             source
                         ));
                         break;
@@ -295,12 +296,48 @@ public class ControlService {
                             handleRoomLeave(controlData, source);
                         }
                         break;
+                    case CONTROL_ROOM_APPROVE:
+                        if (!connectionManager.isServerMode()) {
+                            eventAggregator.publish(new NetworkEvent(
+                                NetworkEvent.EventType.ROOM_APPROVED,
+                                parseRoomPayload(controlData, Room.EstadoRoom.ACTIVO),
+                                source
+                            ));
+                        }
+                        break;
+                    case CONTROL_ROOM_REJECT:
+                        if (!connectionManager.isServerMode()) {
+                            eventAggregator.publish(new NetworkEvent(
+                                NetworkEvent.EventType.ROOM_REJECTED,
+                                parseRoomPayload(controlData, Room.EstadoRoom.RECHAZADO),
+                                source
+                            ));
+                        }
+                        break;
+                    case CONTROL_ROOM_CLOSE:
+                        if (!connectionManager.isServerMode()) {
+                            eventAggregator.publish(new NetworkEvent(
+                                NetworkEvent.EventType.ROOM_CLOSED,
+                                parseRoomPayload(controlData, Room.EstadoRoom.CERRADO),
+                                source
+                            ));
+                        }
+                        break;
                     case CONTROL_ROOM_LIST:
-                        eventAggregator.publish(new NetworkEvent(
-                            NetworkEvent.EventType.ROOM_CREATED,
-                            controlData,
-                            source
-                        ));
+                        if (connectionManager.isServerMode()) {
+                            try {
+                                sendRoomList(source);
+                            } catch (IOException e) {
+                                logger.error("No se pudo enviar lista de rooms a {}", source, e);
+                            }
+                        } else {
+                            List<RoomSummary> summaries = parseRoomListJson(controlData);
+                            eventAggregator.publish(new NetworkEvent(
+                                NetworkEvent.EventType.ROOM_LIST,
+                                summaries,
+                                source
+                            ));
+                        }
                         break;
                     case CONTROL_ADMIN_MUTE:
                     case CONTROL_ADMIN_UNMUTE:
@@ -391,6 +428,93 @@ public class ControlService {
             return null;
         }
         return new UserDescriptor(connectionId, displayName);
+    }
+
+    private Room parseRoomPayload(String payload, Room.EstadoRoom estado) {
+        if (payload == null || payload.isBlank()) {
+            return null;
+        }
+        String[] parts = payload.split("\\|");
+        if (parts.length < 3) {
+            return null;
+        }
+        try {
+            Long id = Long.parseLong(decodeCredential(parts[1]));
+            String name = decodeCredential(parts[2]);
+            Room room = new Room();
+            room.setId(id);
+            room.setName(name);
+            room.setEstado(estado);
+            return room;
+        } catch (NumberFormatException e) {
+            logger.warn("No se pudo parsear payload de room: {}", payload, e);
+            return null;
+        }
+    }
+
+    private RoomJoinResponse parseRoomJoinResponse(String payload) {
+        if (payload == null) {
+            return new RoomJoinResponse(false, null, "Respuesta vacía");
+        }
+        if (payload.startsWith("OK|")) {
+            String[] parts = payload.split("\\|", 2);
+            if (parts.length == 2) {
+                try {
+                    Long roomId = Long.parseLong(decodeCredential(parts[1]));
+                    return new RoomJoinResponse(true, roomId, "");
+                } catch (NumberFormatException e) {
+                    return new RoomJoinResponse(false, null, "ID de room inválido");
+                }
+            }
+        }
+        OperationResultPayload result = OperationResultPayload.fromPayload(payload);
+        return new RoomJoinResponse(false, null, result.getMessage());
+    }
+
+    /**
+     * Parsea el JSON de lista de rooms enviado por el servidor.
+     */
+    public static List<RoomSummary> parseRoomListJson(String json) {
+        List<RoomSummary> rooms = new ArrayList<>();
+        if (json == null) {
+            return rooms;
+        }
+        String trimmed = json.trim();
+        if (trimmed.length() < 2 || !trimmed.startsWith("[") || !trimmed.endsWith("]")) {
+            return rooms;
+        }
+        String body = trimmed.substring(1, trimmed.length() - 1).trim();
+        if (body.isEmpty()) {
+            return rooms;
+        }
+        // formato esperado: [{"id":1,"name":"Room","creator":"user"}, ...]
+        String[] entries = body.split("\\},\\{");
+        for (String entry : entries) {
+            String cleaned = entry.replace("{", "").replace("}", "");
+            String[] fields = cleaned.split(",");
+            Long id = null;
+            String name = "";
+            String creator = "";
+            for (String field : fields) {
+                String[] kv = field.split(":", 2);
+                if (kv.length != 2) continue;
+                String key = kv[0].replace("\"", "").trim();
+                String value = kv[1].replace("\"", "").trim();
+                switch (key) {
+                    case "id" -> {
+                        try {
+                            id = Long.parseLong(value);
+                        } catch (NumberFormatException ignored) { }
+                    }
+                    case "name" -> name = value;
+                    case "creator" -> creator = value;
+                }
+            }
+            if (id != null) {
+                rooms.add(new RoomSummary(id, name, creator));
+            }
+        }
+        return rooms;
     }
 
     private String formatUserEntry(String connectionId) {
@@ -651,6 +775,54 @@ public class ControlService {
 
         public String getDisplayName() {
             return displayName;
+        }
+    }
+
+    public static class RoomSummary {
+        private final Long id;
+        private final String name;
+        private final String creatorUsername;
+
+        public RoomSummary(Long id, String name, String creatorUsername) {
+            this.id = id;
+            this.name = name;
+            this.creatorUsername = creatorUsername;
+        }
+
+        public Long getId() {
+            return id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public String getCreatorUsername() {
+            return creatorUsername;
+        }
+    }
+
+    public static class RoomJoinResponse {
+        private final boolean success;
+        private final Long roomId;
+        private final String message;
+
+        public RoomJoinResponse(boolean success, Long roomId, String message) {
+            this.success = success;
+            this.roomId = roomId;
+            this.message = message;
+        }
+
+        public boolean isSuccess() {
+            return success;
+        }
+
+        public Long getRoomId() {
+            return roomId;
+        }
+
+        public String getMessage() {
+            return message;
         }
     }
 

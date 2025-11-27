@@ -359,6 +359,22 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
                         requestRoomList();
                     }
                     break;
+                case ROOM_LIST:
+                    if (event.getData() instanceof java.util.List<?> list) {
+                        availableRooms.clear();
+                        for (Object obj : list) {
+                            if (obj instanceof ControlService.RoomSummary summary) {
+                                Room room = new Room();
+                                room.setId(summary.getId());
+                                room.setName(summary.getName());
+                                room.setCreatorUsername(summary.getCreatorUsername());
+                                availableRooms.put(room.getId(), room);
+                            }
+                        }
+                        refreshRoomsList();
+                        updateStatus("Rooms sincronizados con el servidor");
+                    }
+                    break;
                 case ROOM_APPROVED:
                     if (event.getData() instanceof Room) {
                         Room room = (Room) event.getData();
@@ -373,6 +389,16 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
                         availableRooms.remove(room.getId());
                         refreshRoomsList();
                         showAlert("Room Rechazado", "El room '" + room.getName() + "' ha sido rechazado por el servidor.", Alert.AlertType.WARNING);
+                    }
+                    break;
+                case ROOM_MEMBER_ADDED:
+                    if (event.getData() instanceof ControlService.RoomJoinResponse joinResponse) {
+                        if (joinResponse.isSuccess()) {
+                            updateStatus("Unido al room " + joinResponse.getRoomId());
+                            requestRoomList();
+                        } else {
+                            showAlert("Room", joinResponse.getMessage(), Alert.AlertType.WARNING);
+                        }
                     }
                     break;
                 default:
