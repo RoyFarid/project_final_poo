@@ -1,4 +1,4 @@
-﻿package com.whatsapp.ui;
+package com.whatsapp.ui;
 
 import com.whatsapp.model.Room;
 import com.whatsapp.model.Usuario;
