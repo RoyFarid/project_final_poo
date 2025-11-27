@@ -502,7 +502,7 @@ public class ControlService {
         if (body.isEmpty()) {
             return rooms;
         }
-        // formato esperado: [{"id":1,"name":"Room","creator":"user"}, ...]
+        // formato esperado: [{"id":1,"name":"Room","creator":"user","members":"id1,id2"}, ...]
         String[] entries = body.split("\\},\\{");
         for (String entry : entries) {
             String cleaned = entry.replace("{", "").replace("}", "");
@@ -510,6 +510,7 @@ public class ControlService {
             Long id = null;
             String name = "";
             String creator = "";
+            java.util.Set<String> members = new java.util.LinkedHashSet<>();
             for (String field : fields) {
                 String[] kv = field.split(":", 2);
                 if (kv.length != 2) continue;
@@ -523,10 +524,19 @@ public class ControlService {
                     }
                     case "name" -> name = value;
                     case "creator" -> creator = value;
+                    case "members" -> {
+                        if (!value.isBlank()) {
+                            for (String m : value.split(",")) {
+                                if (!m.isBlank()) {
+                                    members.add(m);
+                                }
+                            }
+                        }
+                    }
                 }
             }
             if (id != null) {
-                rooms.add(new RoomSummary(id, name, creator));
+                rooms.add(new RoomSummary(id, name, creator, members));
             }
         }
         return rooms;
@@ -788,9 +798,56 @@ public class ControlService {
         }
     }
 
+    private void handleRoomChatMessage(String payload, String senderConnectionId) {
+        try {
+            String[] parts = payload.split("\\|", 2);
+            if (parts.length < 2) {
+                return;
+            }
+            Long roomId = Long.parseLong(decodeCredential(parts[0]));
+            String encodedMessage = parts[1];
+
+            Optional<Room> roomOpt = roomService.getRoom(roomId);
+            if (roomOpt.isEmpty()) {
+                return;
+            }
+            Room room = roomOpt.get();
+            for (String memberId : room.getMembers()) {
+                if (memberId == null || memberId.equals(senderConnectionId) || memberId.startsWith("SERVER_")) {
+                    continue;
+                }
+                if (!connectionManager.getConnectedClients().contains(memberId)) {
+                    continue;
+                }
+                String forward = encodeCredential(String.valueOf(roomId)) + "|" +
+                                 encodeCredential(senderConnectionId) + "|" +
+                                 encodedMessage;
+                sendControlMessage(memberId, CONTROL_ROOM_MESSAGE, forward);
+            }
+        } catch (Exception e) {
+            logger.warn("Error manejando mensaje de room", e);
+        }
+    }
+
+    private RoomChatMessage parseRoomChatMessage(String payload) {
+        try {
+            String[] parts = payload.split("\\|", 3);
+            if (parts.length < 3) {
+                return null;
+            }
+            Long roomId = Long.parseLong(decodeCredential(parts[0]));
+            String sender = decodeCredential(parts[1]);
+            String message = decodeCredential(parts[2]);
+            return new RoomChatMessage(roomId, sender, message);
+        } catch (Exception e) {
+            logger.warn("No se pudo parsear mensaje de room", e);
+            return null;
+        }
+    }
+
     public void sendRoomList(String connectionId) throws IOException {
         List<Room> activeRooms = roomService.getActiveRooms();
-        // Serializar lista de rooms a JSON simple
+        // Serializar lista de rooms a JSON simple, incluyendo miembros
         StringBuilder json = new StringBuilder("[");
         boolean first = true;
         for (Room room : activeRooms) {
@@ -800,7 +857,8 @@ public class ControlService {
             json.append("{")
                 .append("\"id\":").append(room.getId()).append(",")
                 .append("\"name\":\"").append(escapeJson(room.getName())).append("\",")
-                .append("\"creator\":\"").append(escapeJson(room.getCreatorUsername())).append("\"")
+                .append("\"creator\":\"").append(escapeJson(room.getCreatorUsername())).append("\",")
+                .append("\"members\":\"").append(escapeJson(String.join(",", room.getMembers()))).append("\"")
                 .append("}");
             first = false;
         }
@@ -810,6 +868,30 @@ public class ControlService {
 
     public void sendAdminControl(String targetConnectionId, byte controlType) throws IOException {
         sendControlMessage(targetConnectionId, controlType, "");
+    }
+
+    public static class RoomChatMessage {
+        private final Long roomId;
+        private final String senderConnectionId;
+        private final String message;
+
+        public RoomChatMessage(Long roomId, String senderConnectionId, String message) {
+            this.roomId = roomId;
+            this.senderConnectionId = senderConnectionId;
+            this.message = message;
+        }
+
+        public Long getRoomId() {
+            return roomId;
+        }
+
+        public String getSenderConnectionId() {
+            return senderConnectionId;
+        }
+
+        public String getMessage() {
+            return message;
+        }
     }
 
     public static class UserDescriptor {
@@ -834,11 +916,13 @@ public class ControlService {
         private final Long id;
         private final String name;
         private final String creatorUsername;
+        private final java.util.Set<String> members;
 
-        public RoomSummary(Long id, String name, String creatorUsername) {
+        public RoomSummary(Long id, String name, String creatorUsername, java.util.Set<String> members) {
             this.id = id;
             this.name = name;
             this.creatorUsername = creatorUsername;
+            this.members = members == null ? java.util.Set.of() : members;
         }
 
         public Long getId() {
@@ -851,6 +935,10 @@ public class ControlService {
 
         public String getCreatorUsername() {
             return creatorUsername;
+        }
+
+        public java.util.Set<String> getMembers() {
+            return members;
         }
     }
 
