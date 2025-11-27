@@ -122,6 +122,42 @@ public class RoomService {
     }
 
     /**
+     * Crea un room activo directamente desde el servidor (sin pasar por estado PENDIENTE).
+     */
+    public Room createRoomByServer(String roomName, Set<String> memberConnectionIds, boolean includeServer) {
+        if (serverUsername == null) {
+            throw new IllegalStateException("Server username no est\u00e1 configurado");
+        }
+        if (roomName == null || roomName.isBlank()) {
+            throw new IllegalArgumentException("El nombre del room es obligatorio");
+        }
+
+        String serverMemberId = "SERVER_" + serverUsername;
+        Set<String> members = new java.util.HashSet<>();
+        if (memberConnectionIds != null) {
+            members.addAll(memberConnectionIds);
+        }
+        // El servidor siempre es creador y miembro
+        members.add(serverMemberId);
+        if (!includeServer) {
+            // Si no quiere participar, solo se agrega como creador
+            members.remove(serverMemberId);
+        }
+
+        Room room = new Room(roomName, serverMemberId, serverUsername, serverUsername);
+        room.setEstado(Room.EstadoRoom.ACTIVO);
+        room.setIncludeServer(includeServer);
+        room.getMembers().clear();
+        room.getMembers().addAll(members);
+
+        room = roomRepository.save(room);
+        activeRoomsCache.put(room.getId(), room);
+        requestMessages.remove(room.getId());
+        logService.logInfo("Room creado por servidor: " + roomName, "RoomService", traceId, null);
+        return room;
+    }
+
+    /**
      * Aprueba un room pendiente
      */
     public boolean approveRoom(Long roomId) {

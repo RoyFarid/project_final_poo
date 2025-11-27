@@ -1117,6 +1117,29 @@ public class ControlService {
         return adminCameraDisabled.get();
     }
 
+    /**
+     * Crea un room directamente desde el servidor y notifica a los miembros.
+     */
+    public Room createRoomAsServer(String roomName, Set<String> memberConnectionIds, boolean includeServer) throws IOException {
+        Room room = roomService.createRoomByServer(roomName, memberConnectionIds, includeServer);
+
+        // Notificar a los miembros seleccionados
+        String payload = "APPROVED|" + encodeCredential(String.valueOf(room.getId())) + "|" + encodeCredential(room.getName());
+        for (String memberId : room.getMembers()) {
+            if (memberId == null || memberId.startsWith("SERVER_")) {
+                continue;
+            }
+            if (!connectionManager.getConnectedClients().contains(memberId)) {
+                continue;
+            }
+            sendControlMessage(memberId, CONTROL_ROOM_APPROVE, payload);
+        }
+
+        // Actualizar UI del servidor
+        eventAggregator.publish(new NetworkEvent(NetworkEvent.EventType.ROOM_APPROVED, room, "SERVER"));
+        return room;
+    }
+
     public static class RoomChatMessage {
         private final Long roomId;
         private final String senderConnectionId;

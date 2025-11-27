@@ -6,6 +6,7 @@ import java.net.NetworkInterface;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,6 +31,8 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
+import javafx.scene.control.CheckBox;
+import javafx.scene.control.SelectionMode;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
@@ -53,6 +56,8 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
     private final Map<String, String> selectedUserConnectionId = new HashMap<>(); // Para controles de admin
     private final Map<Long, RoomChatView> openRoomChats = new HashMap<>(); // Rooms abiertos en chat
     private String serverConnectionId; // Connection ID del servidor (para cuando actúa como cliente)
+    private final TextField roomNameField = new TextField();
+    private final CheckBox includeAdminCheck = new CheckBox("Incluir admin en el room");
 
     public ServerView(Usuario currentUser) {
         this.currentUser = currentUser;
@@ -113,6 +118,7 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
         Label usersLabel = new Label("Usuarios Conectados:");
         usersLabel.setFont(Font.font(14));
         connectedUsersList.setPrefHeight(200);
+        connectedUsersList.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
         
         // Botones de control de admin
         VBox adminControls = new VBox(5);
@@ -160,6 +166,15 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
         // Panel de rooms
         VBox roomsBox = new VBox(5);
         roomsBox.setPrefWidth(250);
+        Label createRoomLabel = new Label("Crear Room (admin):");
+        createRoomLabel.setFont(Font.font(12));
+        roomNameField.setPromptText("Nombre del room");
+        includeAdminCheck.setSelected(true);
+        Button createRoomButton = new Button("Crear Room");
+        createRoomButton.setOnAction(e -> handleCreateRoom());
+        VBox createRoomBox = new VBox(5, createRoomLabel, roomNameField, includeAdminCheck, createRoomButton);
+        createRoomBox.setPadding(new Insets(5, 0, 5, 0));
+
         Label pendingRoomsLabel = new Label("Rooms Pendientes:");
         pendingRoomsLabel.setFont(Font.font(12));
         pendingRoomsList.setPrefHeight(150);
@@ -239,7 +254,7 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
         activeRoomRow2.getChildren().addAll(leaveRoomButton, closeRoomButton);
         activeRoomControls.getChildren().addAll(activeRoomRow1, activeRoomRow2);
         
-        roomsBox.getChildren().addAll(pendingRoomsLabel, pendingRoomsList, roomControls,
+        roomsBox.getChildren().addAll(createRoomBox, pendingRoomsLabel, pendingRoomsList, roomControls,
             activeRoomsLabel, activeRoomsList, activeRoomControls);
 
         VBox activityBox = new VBox(5);
@@ -590,6 +605,40 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
             }
         } else {
             showAlert("Error", "Seleccione un usuario primero", Alert.AlertType.WARNING);
+        }
+    }
+
+    private void handleCreateRoom() {
+        String roomName = roomNameField.getText() != null ? roomNameField.getText().trim() : "";
+        if (roomName.isEmpty()) {
+            showAlert("Error", "Ingrese un nombre para el room", Alert.AlertType.WARNING);
+            return;
+        }
+
+        Set<String> memberIds = new HashSet<>();
+        var selectedDisplays = connectedUsersList.getSelectionModel().getSelectedItems();
+        for (String display : selectedDisplays) {
+            for (Map.Entry<String, String> entry : connectedUserMap.entrySet()) {
+                if (display.equals(entry.getValue())) {
+                    memberIds.add(entry.getKey());
+                    break;
+                }
+            }
+        }
+
+        boolean includeAdmin = includeAdminCheck.isSelected();
+        if (memberIds.isEmpty() && !includeAdmin) {
+            showAlert("Error", "Seleccione al menos un miembro o incluya al admin.", Alert.AlertType.WARNING);
+            return;
+        }
+
+        try {
+            Room room = controlService.createRoomAsServer(roomName, memberIds, includeAdmin);
+            addActivity("Room creado por admin: " + room.getName());
+            roomNameField.clear();
+            refreshRoomsList();
+        } catch (Exception e) {
+            showAlert("Error", "No se pudo crear el room: " + e.getMessage(), Alert.AlertType.ERROR);
         }
     }
 
