@@ -115,6 +115,7 @@ public class RoomRepository implements IRepository<Room, Long> {
 
     @Override
     public Room save(Room room) {
+        // Intentar con columnas extendidas; si falla por esquema antiguo, usar fallback.
         String sql = "INSERT INTO Room (Name, CreatorConnectionId, CreatorUsername, Estado, FechaCreacion, ServerUsername, RequestMessage, IncludeServer) " +
                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection conn = dbManager.getConnection();
@@ -134,14 +135,34 @@ public class RoomRepository implements IRepository<Room, Long> {
                 room.setId(rs.getLong(1));
             }
             
-            // Guardar miembros
             saveMembers(room);
-            
             logger.info("Room guardado: ID={}, Name={}, Estado={}", room.getId(), room.getName(), room.getEstado());
             return room;
-        } catch (SQLException e) {
-            logger.error("Error al guardar room", e);
-            throw new RuntimeException("Error al guardar room", e);
+        } catch (SQLException primary) {
+            logger.warn("Insert extendido falló, intentando fallback (esquema antiguo)", primary);
+            String legacySql = "INSERT INTO Room (Name, CreatorConnectionId, CreatorUsername, Estado, FechaCreacion, ServerUsername) " +
+                               "VALUES (?, ?, ?, ?, ?, ?)";
+            try (Connection conn = dbManager.getConnection();
+                 PreparedStatement pstmt = conn.prepareStatement(legacySql, Statement.RETURN_GENERATED_KEYS)) {
+                pstmt.setString(1, room.getName());
+                pstmt.setString(2, room.getCreatorConnectionId());
+                pstmt.setString(3, room.getCreatorUsername());
+                pstmt.setString(4, room.getEstado().name());
+                pstmt.setTimestamp(5, java.sql.Timestamp.valueOf(room.getFechaCreacion()));
+                pstmt.setString(6, room.getServerUsername());
+                pstmt.executeUpdate();
+
+                ResultSet rs = pstmt.getGeneratedKeys();
+                if (rs.next()) {
+                    room.setId(rs.getLong(1));
+                }
+                saveMembers(room);
+                logger.info("Room guardado (fallback): ID={}, Name={}, Estado={}", room.getId(), room.getName(), room.getEstado());
+                return room;
+            } catch (SQLException e) {
+                logger.error("Error al guardar room (fallback)", e);
+                throw new RuntimeException("Error al guardar room", e);
+            }
         }
     }
 
@@ -170,18 +191,30 @@ public class RoomRepository implements IRepository<Room, Long> {
 
     @Override
     public void update(Room room) {
-        String sql = "UPDATE Room SET Name = ?, Estado = ? WHERE Id = ?";
+        String sql = "UPDATE Room SET Name = ?, Estado = ?, RequestMessage = ?, IncludeServer = ? WHERE Id = ?";
         try (Connection conn = dbManager.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, room.getName());
             pstmt.setString(2, room.getEstado().name());
-            pstmt.setLong(3, room.getId());
+            pstmt.setString(3, room.getRequestMessage());
+            pstmt.setBoolean(4, room.isIncludeServer());
+            pstmt.setLong(5, room.getId());
             pstmt.executeUpdate();
-            
-            // Actualizar miembros
+
             updateMembers(room);
-        } catch (SQLException e) {
-            logger.error("Error al actualizar room", e);
+        } catch (SQLException primary) {
+            logger.warn("Update extendido falló, probando SQL compatible", primary);
+            String legacySql = "UPDATE Room SET Name = ?, Estado = ? WHERE Id = ?";
+            try (Connection conn = dbManager.getConnection();
+                 PreparedStatement pstmt = conn.prepareStatement(legacySql)) {
+                pstmt.setString(1, room.getName());
+                pstmt.setString(2, room.getEstado().name());
+                pstmt.setLong(3, room.getId());
+                pstmt.executeUpdate();
+                updateMembers(room);
+            } catch (SQLException e) {
+                logger.error("Error al actualizar room", e);
+            }
         }
     }
 
