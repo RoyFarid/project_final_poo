@@ -1,11 +1,13 @@
 package com.whatsapp.ui;
 
+import com.whatsapp.model.Room;
 import com.whatsapp.model.Usuario;
 import com.whatsapp.network.observer.EventAggregator;
 import com.whatsapp.network.observer.NetworkEvent;
 import com.whatsapp.network.observer.NetworkEventObserver;
 import com.whatsapp.service.ControlService;
 import com.whatsapp.service.NetworkFacade;
+import com.whatsapp.service.RoomService;
 import com.whatsapp.service.UserAliasRegistry;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
@@ -23,9 +25,11 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
     private final ControlService controlService;
     private final UserAliasRegistry aliasRegistry;
     private final ListView<ControlService.UserDescriptor> usersList;
+    private ListView<Room> roomsList;
     private final String connectedHost;
     private final int connectedPort;
     private final Label statusLabel;
+    private final Map<Long, Room> availableRooms = new LinkedHashMap<>();
 
     public ClientView(Usuario currentUser, NetworkFacade networkFacade, String serverHost, int serverPort) {
         this.currentUser = currentUser;
@@ -62,14 +66,17 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
         topPanel.getChildren().addAll(title, actionBox);
         setTop(topPanel);
 
-        // Panel central - Lista de usuarios
-        VBox centerBox = new VBox(10);
+        // Panel central - Lista de usuarios y rooms
+        HBox centerBox = new HBox(10);
         centerBox.setPadding(new Insets(20));
 
+        // Panel de usuarios
+        VBox usersBox = new VBox(5);
+        usersBox.setPrefWidth(300);
         Label usersLabel = new Label("Usuarios Conectados (Haz click para chatear):");
         usersLabel.setFont(Font.font(14));
 
-        usersList.setPrefHeight(400);
+        usersList.setPrefHeight(300);
         usersList.setCellFactory(list -> new javafx.scene.control.ListCell<>() {
             @Override
             protected void updateItem(ControlService.UserDescriptor item, boolean empty) {
@@ -84,7 +91,43 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
             }
         });
 
-        centerBox.getChildren().addAll(usersLabel, usersList);
+        // Panel de rooms
+        VBox roomsBox = new VBox(5);
+        roomsBox.setPrefWidth(300);
+        Label roomsLabel = new Label("Rooms Disponibles:");
+        roomsLabel.setFont(Font.font(14));
+
+        roomsList = new ListView<>();
+        roomsList.setPrefHeight(200);
+        roomsList.setCellFactory(list -> new javafx.scene.control.ListCell<Room>() {
+            @Override
+            protected void updateItem(Room room, boolean empty) {
+                super.updateItem(room, empty);
+                if (empty || room == null) {
+                    setText(null);
+                } else {
+                    setText(room.getName() + " (" + room.getMembers().size() + " miembros)");
+                }
+            }
+        });
+        roomsList.setOnMouseClicked(e -> {
+            Room selected = roomsList.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                joinRoom(selected);
+            }
+        });
+
+        // Botones de rooms
+        HBox roomButtons = new HBox(5);
+        Button createRoomButton = new Button("Crear Room");
+        createRoomButton.setOnAction(e -> showCreateRoomDialog());
+        Button refreshRoomsButton = new Button("Actualizar");
+        refreshRoomsButton.setOnAction(e -> requestRoomList());
+        roomButtons.getChildren().addAll(createRoomButton, refreshRoomsButton);
+
+        roomsBox.getChildren().addAll(roomsLabel, roomsList, roomButtons);
+
+        centerBox.getChildren().addAll(usersBox, roomsBox);
         setCenter(centerBox);
 
         // Panel inferior - Estado
@@ -144,30 +187,6 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
         }
     }
 
-    @Override
-    public void onNetworkEvent(NetworkEvent event) {
-        Platform.runLater(() -> {
-            if (!(event.getData() instanceof String)) {
-                return;
-            }
-
-            String payload = (String) event.getData();
-            switch (event.getType()) {
-                case CONNECTED:
-                    if ("SERVER".equals(event.getSource())) {
-                        handleServerConnectedPayload(payload);
-                    }
-                    break;
-                case DISCONNECTED:
-                    serverUserMap.remove(payload);
-                    aliasRegistry.removeAlias(payload);
-                    refreshUsersList();
-                    break;
-                default:
-                    break;
-            }
-        });
-    }
 
     private void handleServerConnectedPayload(String data) {
         if (data.startsWith("[") && data.endsWith("]")) {
@@ -200,5 +219,170 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
     }
 
     private final Map<String, ControlService.UserDescriptor> serverUserMap = new LinkedHashMap<>();
+
+    private void showCreateRoomDialog() {
+        Dialog<RoomCreationData> dialog = new Dialog<>();
+        dialog.setTitle("Crear Room");
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+
+        VBox vbox = new VBox(10);
+        vbox.setPadding(new Insets(20));
+
+        TextField roomNameField = new TextField();
+        roomNameField.setPromptText("Nombre del room");
+        roomNameField.setId("roomName");
+
+        // Lista de usuarios para seleccionar miembros
+        ListView<ControlService.UserDescriptor> memberSelectionList = new ListView<>();
+        memberSelectionList.getItems().addAll(serverUserMap.values());
+        memberSelectionList.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        memberSelectionList.setPrefHeight(200);
+
+        vbox.getChildren().addAll(
+            new Label("Nombre del room:"),
+            roomNameField,
+            new Label("Selecciona miembros (Ctrl+Click para múltiples):"),
+            memberSelectionList
+        );
+
+        dialog.getDialogPane().setContent(vbox);
+        dialog.setResultConverter(buttonType -> {
+            if (buttonType == ButtonType.OK) {
+                String roomName = roomNameField.getText().trim();
+                if (roomName.isEmpty()) {
+                    showAlert("Error", "El nombre del room no puede estar vacío", Alert.AlertType.ERROR);
+                    return null;
+                }
+
+                Set<String> selectedMembers = new HashSet<>();
+                for (ControlService.UserDescriptor desc : memberSelectionList.getSelectionModel().getSelectedItems()) {
+                    selectedMembers.add(desc.getConnectionId());
+                }
+
+                return new RoomCreationData(roomName, selectedMembers);
+            }
+            return null;
+        });
+
+        dialog.showAndWait().ifPresent(data -> {
+            createRoom(data.roomName, data.members);
+        });
+    }
+
+    private void createRoom(String roomName, Set<String> memberConnectionIds) {
+        try {
+            String serverConnectionId = networkFacade.getPrimaryConnectionId();
+            if (serverConnectionId == null) {
+                showAlert("Error", "No hay conexión activa con el servidor.", Alert.AlertType.ERROR);
+                return;
+            }
+
+            // Construir payload: roomName|creatorUsername|member1,member2,member3
+            String membersStr = String.join(",", memberConnectionIds);
+            String payload = encodeBase64(roomName) + "|" + 
+                           encodeBase64(currentUser.getUsername()) + "|" + 
+                           encodeBase64(membersStr);
+
+            controlService.sendControlMessage(serverConnectionId, ControlService.CONTROL_ROOM_CREATE_REQUEST, payload);
+            updateStatus("Solicitud de room '" + roomName + "' enviada. Esperando aprobación...");
+        } catch (IOException e) {
+            showAlert("Error", "No se pudo crear el room: " + e.getMessage(), Alert.AlertType.ERROR);
+        }
+    }
+
+    private void joinRoom(Room room) {
+        try {
+            String serverConnectionId = networkFacade.getPrimaryConnectionId();
+            if (serverConnectionId == null) {
+                showAlert("Error", "No hay conexión activa con el servidor.", Alert.AlertType.ERROR);
+                return;
+            }
+
+            String payload = encodeBase64(String.valueOf(room.getId()));
+            controlService.sendControlMessage(serverConnectionId, ControlService.CONTROL_ROOM_JOIN_REQUEST, payload);
+            updateStatus("Solicitando unirse al room '" + room.getName() + "'...");
+        } catch (IOException e) {
+            showAlert("Error", "No se pudo unir al room: " + e.getMessage(), Alert.AlertType.ERROR);
+        }
+    }
+
+    private void requestRoomList() {
+        try {
+            String serverConnectionId = networkFacade.getPrimaryConnectionId();
+            if (serverConnectionId != null) {
+                controlService.sendControlMessage(serverConnectionId, ControlService.CONTROL_ROOM_LIST, "");
+            }
+        } catch (IOException e) {
+            showAlert("Error", "No se pudo obtener la lista de rooms: " + e.getMessage(), Alert.AlertType.ERROR);
+        }
+    }
+
+    private String encodeBase64(String value) {
+        return java.util.Base64.getEncoder().encodeToString(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    private static class RoomCreationData {
+        final String roomName;
+        final Set<String> members;
+
+        RoomCreationData(String roomName, Set<String> members) {
+            this.roomName = roomName;
+            this.members = members;
+        }
+    }
+
+    @Override
+    public void onNetworkEvent(NetworkEvent event) {
+        Platform.runLater(() -> {
+            switch (event.getType()) {
+                case CONNECTED:
+                    if ("SERVER".equals(event.getSource()) && event.getData() instanceof String) {
+                        handleServerConnectedPayload((String) event.getData());
+                    }
+                    break;
+                case DISCONNECTED:
+                    if (event.getData() instanceof String) {
+                        String payload = (String) event.getData();
+                        serverUserMap.remove(payload);
+                        aliasRegistry.removeAlias(payload);
+                        refreshUsersList();
+                    }
+                    break;
+                case ROOM_CREATED:
+                    if (event.getData() instanceof Room) {
+                        Room room = (Room) event.getData();
+                        availableRooms.put(room.getId(), room);
+                        refreshRoomsList();
+                    } else if (event.getData() instanceof String) {
+                        // Parsear lista de rooms desde JSON
+                        // Por ahora, solo actualizamos la lista
+                        requestRoomList();
+                    }
+                    break;
+                case ROOM_APPROVED:
+                    if (event.getData() instanceof Room) {
+                        Room room = (Room) event.getData();
+                        availableRooms.put(room.getId(), room);
+                        refreshRoomsList();
+                        showAlert("Room Aprobado", "El room '" + room.getName() + "' ha sido aprobado y está activo.", Alert.AlertType.INFORMATION);
+                    }
+                    break;
+                case ROOM_REJECTED:
+                    if (event.getData() instanceof Room) {
+                        Room room = (Room) event.getData();
+                        availableRooms.remove(room.getId());
+                        refreshRoomsList();
+                        showAlert("Room Rechazado", "El room '" + room.getName() + "' ha sido rechazado por el servidor.", Alert.AlertType.WARNING);
+                    }
+                    break;
+                default:
+                    break;
+            }
+        });
+    }
+
+    private void refreshRoomsList() {
+        roomsList.getItems().setAll(availableRooms.values());
+    }
 }
 

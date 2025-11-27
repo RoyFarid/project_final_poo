@@ -13,15 +13,29 @@ public class DatabaseManager {
     private static DatabaseManager instance;
     private final DatabaseConfig config;
     private Connection connection;
+    private String serverUsername;
 
     private DatabaseManager() {
         this.config = new DatabaseConfig();
         initializeDatabase();
     }
 
+    private DatabaseManager(String serverUsername) {
+        this.serverUsername = serverUsername;
+        this.config = new DatabaseConfig(serverUsername);
+        initializeDatabase();
+    }
+
     public static synchronized DatabaseManager getInstance() {
         if (instance == null) {
             instance = new DatabaseManager();
+        }
+        return instance;
+    }
+
+    public static synchronized DatabaseManager getInstance(String serverUsername) {
+        if (instance == null || instance.serverUsername == null) {
+            instance = new DatabaseManager(serverUsername);
         }
         return instance;
     }
@@ -115,9 +129,37 @@ public class DatabaseManager {
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """;
 
+                // Tabla Room
+                String createRoomTable = """
+                    CREATE TABLE IF NOT EXISTS Room (
+                        Id INT AUTO_INCREMENT PRIMARY KEY,
+                        Name VARCHAR(100) NOT NULL,
+                        CreatorConnectionId VARCHAR(255) NOT NULL,
+                        CreatorUsername VARCHAR(50) NOT NULL,
+                        Estado VARCHAR(20) NOT NULL DEFAULT 'PENDIENTE',
+                        FechaCreacion DATETIME NOT NULL,
+                        ServerUsername VARCHAR(50) NOT NULL,
+                        INDEX idx_server (ServerUsername),
+                        INDEX idx_estado (Estado)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """;
+
+                // Tabla RoomMember
+                String createRoomMemberTable = """
+                    CREATE TABLE IF NOT EXISTS RoomMember (
+                        RoomId INT NOT NULL,
+                        ConnectionId VARCHAR(255) NOT NULL,
+                        PRIMARY KEY (RoomId, ConnectionId),
+                        FOREIGN KEY (RoomId) REFERENCES Room(Id) ON DELETE CASCADE,
+                        INDEX idx_connection (ConnectionId)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """;
+
                 stmt.execute(createUsuarioTable);
                 stmt.execute(createLogTable);
                 stmt.execute(createTransferenciaTable);
+                stmt.execute(createRoomTable);
+                stmt.execute(createRoomMemberTable);
 
                 // Crear índices adicionales (MySQL no soporta IF NOT EXISTS en CREATE INDEX)
                 // El índice único ya está definido en la tabla Usuario con UNIQUE

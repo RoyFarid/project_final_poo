@@ -17,9 +17,24 @@ public class DatabaseConfig {
     private String database;
     private String username;
     private String password;
+    private String serverUsername; // Username del servidor para crear BD única
 
     public DatabaseConfig() {
         loadConfig();
+    }
+
+    public DatabaseConfig(String serverUsername) {
+        this.serverUsername = serverUsername;
+        loadConfig();
+        // Si se proporciona un username de servidor, usar ese para la BD
+        if (serverUsername != null && !serverUsername.isEmpty()) {
+            this.database = sanitizeDatabaseName(serverUsername + "_db");
+        }
+    }
+
+    private String sanitizeDatabaseName(String name) {
+        // Limpiar el nombre para que sea válido como nombre de BD
+        return name.replaceAll("[^a-zA-Z0-9_]", "_").toLowerCase();
     }
 
     private void loadConfig() {

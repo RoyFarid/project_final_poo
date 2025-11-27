@@ -1,23 +1,39 @@
 package com.whatsapp.ui;
 
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.util.ArrayList;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+import com.whatsapp.model.Room;
 import com.whatsapp.model.Usuario;
 import com.whatsapp.network.observer.EventAggregator;
 import com.whatsapp.network.observer.NetworkEvent;
 import com.whatsapp.network.observer.NetworkEventObserver;
 import com.whatsapp.service.ControlService;
 import com.whatsapp.service.NetworkFacade;
+import com.whatsapp.service.RoomService;
 import com.whatsapp.service.UserAliasRegistry;
+
 import javafx.application.Platform;
 import javafx.geometry.Insets;
-import javafx.scene.control.*;
-import javafx.scene.layout.*;
+import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.ListCell;
+import javafx.scene.control.ListView;
+import javafx.scene.control.TextField;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.VBox;
 import javafx.scene.text.Font;
 import javafx.scene.text.Text;
-
-import java.io.IOException;
-import java.net.InetAddress;
-import java.net.NetworkInterface;
-import java.util.*;
 
 public class ServerView extends BorderPane implements NetworkEventObserver {
     private final NetworkFacade networkFacade;
@@ -29,6 +45,13 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
     private Button stopServerButton;
     private final UserAliasRegistry aliasRegistry;
     private final Map<String, String> connectedUserMap = new LinkedHashMap<>();
+    private final ControlService controlService;
+    private final RoomService roomService;
+    private final ListView<Room> pendingRoomsList;
+    private final ListView<Room> activeRoomsList;
+    private final Map<String, String> selectedUserConnectionId = new HashMap<>(); // Para controles de admin
+    private final Map<Long, RoomChatView> openRoomChats = new HashMap<>(); // Rooms abiertos en chat
+    private String serverConnectionId; // Connection ID del servidor (para cuando actúa como cliente)
 
     public ServerView(Usuario currentUser) {
         this.currentUser = currentUser;
@@ -37,6 +60,13 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
         this.connectedUsersList = new ListView<>();
         this.portField = new TextField("8080");
         this.aliasRegistry = UserAliasRegistry.getInstance();
+        this.controlService = new ControlService();
+        this.roomService = RoomService.getInstance();
+        this.pendingRoomsList = new ListView<>();
+        this.activeRoomsList = new ListView<>();
+        
+        // Configurar RoomService con el username del servidor
+        roomService.setServerUsername(currentUser.getUsername());
         
         EventAggregator.getInstance().subscribe(this);
         setupUI();
@@ -72,16 +102,90 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
         topPanel.getChildren().addAll(title, configBox);
         setTop(topPanel);
 
-        // Panel central - Usuarios conectados y actividades
+        // Panel central - Usuarios conectados, rooms y actividades
         HBox centerBox = new HBox(10);
         centerBox.setPadding(new Insets(10));
 
+        // Panel de usuarios con controles de admin
         VBox usersBox = new VBox(5);
-        usersBox.setPrefWidth(300);
+        usersBox.setPrefWidth(250);
         Label usersLabel = new Label("Usuarios Conectados:");
         usersLabel.setFont(Font.font(14));
-        connectedUsersList.setPrefHeight(400);
-        usersBox.getChildren().addAll(usersLabel, connectedUsersList);
+        connectedUsersList.setPrefHeight(200);
+        
+        // Botones de control de admin
+        HBox adminControls = new HBox(5);
+        Button muteButton = new Button("Silenciar");
+        muteButton.setOnAction(e -> handleMuteUser());
+        Button unmuteButton = new Button("Activar Audio");
+        unmuteButton.setOnAction(e -> handleUnmuteUser());
+        Button disableCameraButton = new Button("Desactivar Cámara");
+        disableCameraButton.setOnAction(e -> handleDisableCamera());
+        Button enableCameraButton = new Button("Activar Cámara");
+        enableCameraButton.setOnAction(e -> handleEnableCamera());
+        Button blockMessagesButton = new Button("Bloquear Mensajes");
+        blockMessagesButton.setOnAction(e -> handleBlockMessages());
+        Button unblockMessagesButton = new Button("Permitir Mensajes");
+        unblockMessagesButton.setOnAction(e -> handleUnblockMessages());
+        
+        adminControls.getChildren().addAll(muteButton, unmuteButton, disableCameraButton, 
+            enableCameraButton, blockMessagesButton, unblockMessagesButton);
+        
+        usersBox.getChildren().addAll(usersLabel, connectedUsersList, new Label("Controles Admin:"), adminControls);
+
+        // Panel de rooms
+        VBox roomsBox = new VBox(5);
+        roomsBox.setPrefWidth(250);
+        Label pendingRoomsLabel = new Label("Rooms Pendientes:");
+        pendingRoomsLabel.setFont(Font.font(12));
+        pendingRoomsList.setPrefHeight(150);
+        pendingRoomsList.setCellFactory(list -> new ListCell<Room>() {
+            @Override
+            protected void updateItem(Room room, boolean empty) {
+                super.updateItem(room, empty);
+                if (empty || room == null) {
+                    setText(null);
+                } else {
+                    setText(room.getName() + " (por " + room.getCreatorUsername() + ")");
+                }
+            }
+        });
+        
+        HBox roomControls = new HBox(5);
+        Button approveRoomButton = new Button("Aprobar");
+        approveRoomButton.setOnAction(e -> handleApproveRoom());
+        Button rejectRoomButton = new Button("Rechazar");
+        rejectRoomButton.setOnAction(e -> handleRejectRoom());
+        roomControls.getChildren().addAll(approveRoomButton, rejectRoomButton);
+        
+        Label activeRoomsLabel = new Label("Rooms Activos:");
+        activeRoomsLabel.setFont(Font.font(12));
+        activeRoomsList.setPrefHeight(150);
+        activeRoomsList.setCellFactory(list -> new ListCell<Room>() {
+            @Override
+            protected void updateItem(Room room, boolean empty) {
+                super.updateItem(room, empty);
+                if (empty || room == null) {
+                    setText(null);
+                } else {
+                    setText(room.getName());
+                }
+            }
+        });
+        
+        HBox activeRoomControls = new HBox(5);
+        Button joinRoomButton = new Button("Unirse al Room");
+        joinRoomButton.setOnAction(e -> handleJoinRoom());
+        Button openRoomChatButton = new Button("Abrir Chat del Room");
+        openRoomChatButton.setOnAction(e -> handleOpenRoomChat());
+        Button leaveRoomButton = new Button("Salir del Room");
+        leaveRoomButton.setOnAction(e -> handleLeaveRoom());
+        Button closeRoomButton = new Button("Cerrar Room");
+        closeRoomButton.setOnAction(e -> handleCloseRoom());
+        activeRoomControls.getChildren().addAll(joinRoomButton, openRoomChatButton, leaveRoomButton, closeRoomButton);
+        
+        roomsBox.getChildren().addAll(pendingRoomsLabel, pendingRoomsList, roomControls,
+            activeRoomsLabel, activeRoomsList, activeRoomControls);
 
         VBox activityBox = new VBox(5);
         Label activityLabel = new Label("Actividades:");
@@ -89,8 +193,25 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
         activityList.setPrefHeight(400);
         activityBox.getChildren().addAll(activityLabel, activityList);
 
-        centerBox.getChildren().addAll(usersBox, activityBox);
+        centerBox.getChildren().addAll(usersBox, roomsBox, activityBox);
         setCenter(centerBox);
+        
+        // Configurar selección de usuarios
+        connectedUsersList.setOnMouseClicked(e -> {
+            String selected = connectedUsersList.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                // Encontrar el connectionId correspondiente
+                for (Map.Entry<String, String> entry : connectedUserMap.entrySet()) {
+                    if (entry.getValue().equals(selected)) {
+                        selectedUserConnectionId.put("selected", entry.getKey());
+                        break;
+                    }
+                }
+            }
+        });
+        
+        // Refrescar lista de rooms periódicamente
+        refreshRoomsList();
 
         // Panel inferior - Información del servidor
         VBox bottomPanel = new VBox(5);
@@ -113,6 +234,10 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
         try {
             int port = Integer.parseInt(portField.getText());
             networkFacade.startServer(port);
+            
+            // Obtener el connection ID del servidor (usando el primer cliente conectado como referencia)
+            // En modo servidor, el servidor puede usar su propio connection ID
+            serverConnectionId = "SERVER_" + currentUser.getUsername();
             
             Platform.runLater(() -> {
                 startServerButton.setDisable(true);
@@ -247,6 +372,18 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
                 case VIDEO_FRAME:
                     addActivity(resolveDisplayName(event.getSource()) + ": Videollamada activa");
                     break;
+                case ROOM_CREATED:
+                    if (event.getData() instanceof Room) {
+                        Room room = (Room) event.getData();
+                        addActivity("Nueva solicitud de room: " + room.getName() + " (por " + room.getCreatorUsername() + ")");
+                        refreshRoomsList();
+                    }
+                    break;
+                case ROOM_APPROVED:
+                case ROOM_REJECTED:
+                case ROOM_CLOSED:
+                    refreshRoomsList();
+                    break;
                 default:
                     break;
             }
@@ -271,6 +408,228 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
 
     private String resolveDisplayName(String connectionId) {
         return aliasRegistry.getAliasOrDefault(connectionId);
+    }
+
+    private void handleMuteUser() {
+        String connectionId = selectedUserConnectionId.get("selected");
+        if (connectionId != null) {
+            try {
+                controlService.sendAdminControl(connectionId, ControlService.CONTROL_ADMIN_MUTE);
+                addActivity("Usuario " + resolveDisplayName(connectionId) + " silenciado");
+            } catch (IOException e) {
+                showAlert("Error", "No se pudo silenciar al usuario: " + e.getMessage(), Alert.AlertType.ERROR);
+            }
+        } else {
+            showAlert("Error", "Seleccione un usuario primero", Alert.AlertType.WARNING);
+        }
+    }
+
+    private void handleUnmuteUser() {
+        String connectionId = selectedUserConnectionId.get("selected");
+        if (connectionId != null) {
+            try {
+                controlService.sendAdminControl(connectionId, ControlService.CONTROL_ADMIN_UNMUTE);
+                addActivity("Audio activado para " + resolveDisplayName(connectionId));
+            } catch (IOException e) {
+                showAlert("Error", "No se pudo activar el audio: " + e.getMessage(), Alert.AlertType.ERROR);
+            }
+        } else {
+            showAlert("Error", "Seleccione un usuario primero", Alert.AlertType.WARNING);
+        }
+    }
+
+    private void handleDisableCamera() {
+        String connectionId = selectedUserConnectionId.get("selected");
+        if (connectionId != null) {
+            try {
+                controlService.sendAdminControl(connectionId, ControlService.CONTROL_ADMIN_DISABLE_CAMERA);
+                addActivity("Cámara desactivada para " + resolveDisplayName(connectionId));
+            } catch (IOException e) {
+                showAlert("Error", "No se pudo desactivar la cámara: " + e.getMessage(), Alert.AlertType.ERROR);
+            }
+        } else {
+            showAlert("Error", "Seleccione un usuario primero", Alert.AlertType.WARNING);
+        }
+    }
+
+    private void handleEnableCamera() {
+        String connectionId = selectedUserConnectionId.get("selected");
+        if (connectionId != null) {
+            try {
+                controlService.sendAdminControl(connectionId, ControlService.CONTROL_ADMIN_ENABLE_CAMERA);
+                addActivity("Cámara activada para " + resolveDisplayName(connectionId));
+            } catch (IOException e) {
+                showAlert("Error", "No se pudo activar la cámara: " + e.getMessage(), Alert.AlertType.ERROR);
+            }
+        } else {
+            showAlert("Error", "Seleccione un usuario primero", Alert.AlertType.WARNING);
+        }
+    }
+
+    private void handleBlockMessages() {
+        String connectionId = selectedUserConnectionId.get("selected");
+        if (connectionId != null) {
+            try {
+                controlService.sendAdminControl(connectionId, ControlService.CONTROL_ADMIN_BLOCK_MESSAGES);
+                addActivity("Mensajes bloqueados para " + resolveDisplayName(connectionId));
+            } catch (IOException e) {
+                showAlert("Error", "No se pudieron bloquear los mensajes: " + e.getMessage(), Alert.AlertType.ERROR);
+            }
+        } else {
+            showAlert("Error", "Seleccione un usuario primero", Alert.AlertType.WARNING);
+        }
+    }
+
+    private void handleUnblockMessages() {
+        String connectionId = selectedUserConnectionId.get("selected");
+        if (connectionId != null) {
+            try {
+                controlService.sendAdminControl(connectionId, ControlService.CONTROL_ADMIN_UNBLOCK_MESSAGES);
+                addActivity("Mensajes permitidos para " + resolveDisplayName(connectionId));
+            } catch (IOException e) {
+                showAlert("Error", "No se pudieron permitir los mensajes: " + e.getMessage(), Alert.AlertType.ERROR);
+            }
+        } else {
+            showAlert("Error", "Seleccione un usuario primero", Alert.AlertType.WARNING);
+        }
+    }
+
+    private void handleApproveRoom() {
+        Room selected = pendingRoomsList.getSelectionModel().getSelectedItem();
+        if (selected != null) {
+            try {
+                controlService.approveRoom(selected.getId());
+                addActivity("Room '" + selected.getName() + "' aprobado");
+                refreshRoomsList();
+            } catch (IOException e) {
+                showAlert("Error", "No se pudo aprobar el room: " + e.getMessage(), Alert.AlertType.ERROR);
+            }
+        } else {
+            showAlert("Error", "Seleccione un room pendiente primero", Alert.AlertType.WARNING);
+        }
+    }
+
+    private void handleRejectRoom() {
+        Room selected = pendingRoomsList.getSelectionModel().getSelectedItem();
+        if (selected != null) {
+            try {
+                controlService.rejectRoom(selected.getId());
+                addActivity("Room '" + selected.getName() + "' rechazado");
+                refreshRoomsList();
+            } catch (IOException e) {
+                showAlert("Error", "No se pudo rechazar el room: " + e.getMessage(), Alert.AlertType.ERROR);
+            }
+        } else {
+            showAlert("Error", "Seleccione un room pendiente primero", Alert.AlertType.WARNING);
+        }
+    }
+
+    private void handleCloseRoom() {
+        Room selected = activeRoomsList.getSelectionModel().getSelectedItem();
+        if (selected != null) {
+            try {
+                controlService.closeRoom(selected.getId());
+                addActivity("Room '" + selected.getName() + "' cerrado");
+                refreshRoomsList();
+            } catch (IOException e) {
+                showAlert("Error", "No se pudo cerrar el room: " + e.getMessage(), Alert.AlertType.ERROR);
+            }
+        } else {
+            showAlert("Error", "Seleccione un room activo primero", Alert.AlertType.WARNING);
+        }
+    }
+
+    private void refreshRoomsList() {
+        Platform.runLater(() -> {
+            List<Room> pending = roomService.getPendingRooms();
+            pendingRoomsList.getItems().setAll(pending);
+            
+            List<Room> active = roomService.getActiveRooms();
+            activeRoomsList.getItems().setAll(active);
+        });
+    }
+
+    private void handleJoinRoom() {
+        Room selected = activeRoomsList.getSelectionModel().getSelectedItem();
+        if (selected != null) {
+            try {
+                // Agregar el servidor como miembro del room
+                // Como servidor, usamos un connection ID especial
+                String serverMemberId = "SERVER_" + currentUser.getUsername();
+                if (roomService.addMemberToRoom(selected.getId(), serverMemberId)) {
+                    addActivity("Servidor unido al room: " + selected.getName());
+                    refreshRoomsList();
+                } else {
+                    showAlert("Error", "No se pudo unir al room", Alert.AlertType.ERROR);
+                }
+            } catch (Exception e) {
+                showAlert("Error", "Error al unirse al room: " + e.getMessage(), Alert.AlertType.ERROR);
+            }
+        } else {
+            showAlert("Error", "Seleccione un room activo primero", Alert.AlertType.WARNING);
+        }
+    }
+
+    private void handleOpenRoomChat() {
+        Room selected = activeRoomsList.getSelectionModel().getSelectedItem();
+        if (selected != null) {
+            // Verificar si el servidor es miembro del room
+            Optional<Room> roomOpt = roomService.getRoom(selected.getId());
+            if (roomOpt.isPresent()) {
+                Room room = roomOpt.get();
+                String serverMemberId = "SERVER_" + currentUser.getUsername();
+                
+                // Si no es miembro, unirse primero
+                if (!room.hasMember(serverMemberId)) {
+                    roomService.addMemberToRoom(room.getId(), serverMemberId);
+                }
+
+                // Abrir o mostrar la ventana de chat del room
+                RoomChatView roomChatView = openRoomChats.get(room.getId());
+                if (roomChatView == null) {
+                    roomChatView = new RoomChatView(currentUser, room, networkFacade, true);
+                    openRoomChats.put(room.getId(), roomChatView);
+                }
+
+                javafx.stage.Stage chatStage = new javafx.stage.Stage();
+                chatStage.setTitle("Room: " + room.getName() + " - " + currentUser.getUsername());
+                chatStage.setScene(new javafx.scene.Scene(roomChatView, 900, 700));
+                chatStage.setOnCloseRequest(e -> {
+                    // No eliminar de openRoomChats para poder reabrir
+                });
+                chatStage.show();
+                addActivity("Chat del room '" + room.getName() + "' abierto");
+            }
+        } else {
+            showAlert("Error", "Seleccione un room activo primero", Alert.AlertType.WARNING);
+        }
+    }
+
+    private void handleLeaveRoom() {
+        Room selected = activeRoomsList.getSelectionModel().getSelectedItem();
+        if (selected != null) {
+            try {
+                String serverMemberId = "SERVER_" + currentUser.getUsername();
+                if (roomService.removeMemberFromRoom(selected.getId(), serverMemberId)) {
+                    addActivity("Servidor salió del room: " + selected.getName());
+                    // Cerrar la ventana de chat si está abierta
+                    RoomChatView chatView = openRoomChats.remove(selected.getId());
+                    if (chatView != null) {
+                        javafx.stage.Stage stage = (javafx.stage.Stage) chatView.getScene().getWindow();
+                        if (stage != null) {
+                            stage.close();
+                        }
+                    }
+                    refreshRoomsList();
+                } else {
+                    showAlert("Error", "No se pudo salir del room", Alert.AlertType.ERROR);
+                }
+            } catch (Exception e) {
+                showAlert("Error", "Error al salir del room: " + e.getMessage(), Alert.AlertType.ERROR);
+            }
+        } else {
+            showAlert("Error", "Seleccione un room activo primero", Alert.AlertType.WARNING);
+        }
     }
 }
 

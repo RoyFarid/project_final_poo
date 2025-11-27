@@ -1,5 +1,6 @@
 package com.whatsapp.service;
 
+import com.whatsapp.model.Room;
 import com.whatsapp.model.Usuario;
 import com.whatsapp.network.ConnectionManager;
 import com.whatsapp.network.observer.EventAggregator;
@@ -24,6 +25,7 @@ public class ControlService {
     private final AtomicInteger correlIdGenerator;
     private String traceId;
     private final UserAliasRegistry aliasRegistry;
+    private final RoomService roomService;
     
     // Tipos de mensajes de control
     public static final byte CONTROL_USER_LIST = 1;
@@ -34,6 +36,23 @@ public class ControlService {
     public static final byte CONTROL_AUTH_RESPONSE = 6;
     public static final byte CONTROL_REGISTER_REQUEST = 7;
     public static final byte CONTROL_REGISTER_RESPONSE = 8;
+    // Room control messages
+    public static final byte CONTROL_ROOM_CREATE_REQUEST = 9;
+    public static final byte CONTROL_ROOM_CREATE_RESPONSE = 10;
+    public static final byte CONTROL_ROOM_APPROVE = 11;
+    public static final byte CONTROL_ROOM_REJECT = 12;
+    public static final byte CONTROL_ROOM_JOIN_REQUEST = 13;
+    public static final byte CONTROL_ROOM_JOIN_RESPONSE = 14;
+    public static final byte CONTROL_ROOM_LEAVE = 15;
+    public static final byte CONTROL_ROOM_CLOSE = 16;
+    public static final byte CONTROL_ROOM_LIST = 17;
+    // Admin control messages
+    public static final byte CONTROL_ADMIN_MUTE = 18;
+    public static final byte CONTROL_ADMIN_UNMUTE = 19;
+    public static final byte CONTROL_ADMIN_DISABLE_CAMERA = 20;
+    public static final byte CONTROL_ADMIN_ENABLE_CAMERA = 21;
+    public static final byte CONTROL_ADMIN_BLOCK_MESSAGES = 22;
+    public static final byte CONTROL_ADMIN_UNBLOCK_MESSAGES = 23;
 
     public ControlService() {
         this.connectionManager = ConnectionManager.getInstance();
@@ -42,6 +61,7 @@ public class ControlService {
         this.correlIdGenerator = new AtomicInteger(0);
         this.traceId = logService.generateTraceId();
         this.aliasRegistry = UserAliasRegistry.getInstance();
+        this.roomService = RoomService.getInstance();
     }
 
     /**
@@ -246,6 +266,55 @@ public class ControlService {
                             source
                         ));
                         break;
+                    case CONTROL_ROOM_CREATE_REQUEST:
+                        if (connectionManager.isServerMode()) {
+                            handleRoomCreateRequest(controlData, source);
+                        }
+                        break;
+                    case CONTROL_ROOM_CREATE_RESPONSE:
+                        eventAggregator.publish(new NetworkEvent(
+                            NetworkEvent.EventType.ROOM_CREATED,
+                            controlData,
+                            source
+                        ));
+                        break;
+                    case CONTROL_ROOM_JOIN_REQUEST:
+                        if (connectionManager.isServerMode()) {
+                            handleRoomJoinRequest(controlData, source);
+                        }
+                        break;
+                    case CONTROL_ROOM_JOIN_RESPONSE:
+                        eventAggregator.publish(new NetworkEvent(
+                            NetworkEvent.EventType.ROOM_MEMBER_ADDED,
+                            controlData,
+                            source
+                        ));
+                        break;
+                    case CONTROL_ROOM_LEAVE:
+                        if (connectionManager.isServerMode()) {
+                            handleRoomLeave(controlData, source);
+                        }
+                        break;
+                    case CONTROL_ROOM_LIST:
+                        eventAggregator.publish(new NetworkEvent(
+                            NetworkEvent.EventType.ROOM_CREATED,
+                            controlData,
+                            source
+                        ));
+                        break;
+                    case CONTROL_ADMIN_MUTE:
+                    case CONTROL_ADMIN_UNMUTE:
+                    case CONTROL_ADMIN_DISABLE_CAMERA:
+                    case CONTROL_ADMIN_ENABLE_CAMERA:
+                    case CONTROL_ADMIN_BLOCK_MESSAGES:
+                    case CONTROL_ADMIN_UNBLOCK_MESSAGES:
+                        // Estos se manejan directamente desde el servidor
+                        eventAggregator.publish(new NetworkEvent(
+                            NetworkEvent.EventType.ERROR,
+                            controlData,
+                            source
+                        ));
+                        break;
                 }
             }
         } catch (Exception e) {
@@ -414,6 +483,157 @@ public class ControlService {
                 logger.error("No se pudo enviar respuesta de error de registro", ioException);
             }
         }
+    }
+
+    private void handleRoomCreateRequest(String payload, String source) {
+        try {
+            // Formato: roomName|creatorUsername|member1,member2,member3
+            String[] parts = payload.split("\\|");
+            if (parts.length < 2) {
+                sendControlMessage(source, CONTROL_ROOM_CREATE_RESPONSE, 
+                    OperationResultPayload.error("Payload inválido").toPayload());
+                return;
+            }
+
+            String roomName = decodeCredential(parts[0]);
+            String creatorUsername = decodeCredential(parts[1]);
+            Set<String> members = new java.util.HashSet<>();
+            
+            if (parts.length > 2) {
+                String membersStr = decodeCredential(parts[2]);
+                if (!membersStr.isEmpty()) {
+                    String[] memberIds = membersStr.split(",");
+                    for (String memberId : memberIds) {
+                        if (!memberId.trim().isEmpty()) {
+                            members.add(memberId.trim());
+                        }
+                    }
+                }
+            }
+
+            // Obtener el username del servidor desde ServerRuntime o RoomService
+            // Por ahora, necesitamos obtenerlo de alguna manera
+            // Esto se puede mejorar pasando el serverUsername al ControlService
+            Room room = roomService.createRoomRequest(roomName, source, creatorUsername, members);
+            
+            // Publicar evento para que el servidor vea la solicitud pendiente
+            eventAggregator.publish(new NetworkEvent(
+                NetworkEvent.EventType.ROOM_CREATED,
+                room,
+                source
+            ));
+
+            // Responder al cliente que la solicitud fue recibida
+            String response = "PENDIENTE|" + encodeCredential(String.valueOf(room.getId())) + "|" + encodeCredential(roomName);
+            sendControlMessage(source, CONTROL_ROOM_CREATE_RESPONSE, response);
+        } catch (Exception e) {
+            logger.error("Error procesando solicitud de creación de room", e);
+            try {
+                sendControlMessage(source, CONTROL_ROOM_CREATE_RESPONSE, 
+                    OperationResultPayload.error("Error al crear room: " + e.getMessage()).toPayload());
+            } catch (IOException ioException) {
+                logger.error("No se pudo enviar respuesta de error de room", ioException);
+            }
+        }
+    }
+
+    private void handleRoomJoinRequest(String payload, String source) {
+        try {
+            // Formato: roomId
+            String roomIdStr = decodeCredential(payload);
+            Long roomId = Long.parseLong(roomIdStr);
+            
+            if (roomService.addMemberToRoom(roomId, source)) {
+                String response = "OK|" + encodeCredential(String.valueOf(roomId));
+                sendControlMessage(source, CONTROL_ROOM_JOIN_RESPONSE, response);
+            } else {
+                sendControlMessage(source, CONTROL_ROOM_JOIN_RESPONSE, 
+                    OperationResultPayload.error("No se pudo unir al room").toPayload());
+            }
+        } catch (Exception e) {
+            logger.error("Error procesando solicitud de unión a room", e);
+            try {
+                sendControlMessage(source, CONTROL_ROOM_JOIN_RESPONSE, 
+                    OperationResultPayload.error("Error: " + e.getMessage()).toPayload());
+            } catch (IOException ioException) {
+                logger.error("No se pudo enviar respuesta de error", ioException);
+            }
+        }
+    }
+
+    private void handleRoomLeave(String payload, String source) {
+        try {
+            String roomIdStr = decodeCredential(payload);
+            Long roomId = Long.parseLong(roomIdStr);
+            
+            roomService.removeMemberFromRoom(roomId, source);
+        } catch (Exception e) {
+            logger.error("Error procesando salida de room", e);
+        }
+    }
+
+    public void approveRoom(Long roomId) throws IOException {
+        if (roomService.approveRoom(roomId)) {
+            Optional<Room> roomOpt = roomService.getRoom(roomId);
+            if (roomOpt.isPresent()) {
+                Room room = roomOpt.get();
+                // Notificar a todos los miembros
+                for (String memberId : room.getMembers()) {
+                    String response = "APPROVED|" + encodeCredential(String.valueOf(roomId)) + "|" + encodeCredential(room.getName());
+                    sendControlMessage(memberId, CONTROL_ROOM_APPROVE, response);
+                }
+            }
+        }
+    }
+
+    public void rejectRoom(Long roomId) throws IOException {
+        if (roomService.rejectRoom(roomId)) {
+            Optional<Room> roomOpt = roomService.getRoom(roomId);
+            if (roomOpt.isPresent()) {
+                Room room = roomOpt.get();
+                // Notificar al creador
+                String response = "REJECTED|" + encodeCredential(String.valueOf(roomId)) + "|" + encodeCredential(room.getName());
+                sendControlMessage(room.getCreatorConnectionId(), CONTROL_ROOM_REJECT, response);
+            }
+        }
+    }
+
+    public void closeRoom(Long roomId) throws IOException {
+        if (roomService.closeRoom(roomId)) {
+            Optional<Room> roomOpt = roomService.getRoom(roomId);
+            if (roomOpt.isPresent()) {
+                Room room = roomOpt.get();
+                // Notificar a todos los miembros
+                for (String memberId : room.getMembers()) {
+                    String response = "CLOSED|" + encodeCredential(String.valueOf(roomId)) + "|" + encodeCredential(room.getName());
+                    sendControlMessage(memberId, CONTROL_ROOM_CLOSE, response);
+                }
+            }
+        }
+    }
+
+    public void sendRoomList(String connectionId) throws IOException {
+        List<Room> activeRooms = roomService.getActiveRooms();
+        // Serializar lista de rooms a JSON simple
+        StringBuilder json = new StringBuilder("[");
+        boolean first = true;
+        for (Room room : activeRooms) {
+            if (!first) {
+                json.append(",");
+            }
+            json.append("{")
+                .append("\"id\":").append(room.getId()).append(",")
+                .append("\"name\":\"").append(escapeJson(room.getName())).append("\",")
+                .append("\"creator\":\"").append(escapeJson(room.getCreatorUsername())).append("\"")
+                .append("}");
+            first = false;
+        }
+        json.append("]");
+        sendControlMessage(connectionId, CONTROL_ROOM_LIST, json.toString());
+    }
+
+    public void sendAdminControl(String targetConnectionId, byte controlType) throws IOException {
+        sendControlMessage(targetConnectionId, controlType, "");
     }
 
     public static class UserDescriptor {

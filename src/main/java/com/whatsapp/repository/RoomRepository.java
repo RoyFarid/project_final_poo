@@ -1,0 +1,278 @@
+package com.whatsapp.repository;
+
+import com.whatsapp.database.DatabaseManager;
+import com.whatsapp.model.Room;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.sql.*;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+
+/**
+ * Repository para gestionar rooms en la base de datos.
+ * Patrón: Repository
+ */
+public class RoomRepository implements IRepository<Room, Long> {
+    private static final Logger logger = LoggerFactory.getLogger(RoomRepository.class);
+    private final DatabaseManager dbManager;
+
+    public RoomRepository() {
+        this.dbManager = DatabaseManager.getInstance();
+    }
+
+    @Override
+    public Optional<Room> findById(Long id) {
+        String sql = "SELECT * FROM Room WHERE Id = ?";
+        try (Connection conn = dbManager.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setLong(1, id);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                Room room = mapResultSetToRoom(rs);
+                loadMembers(room);
+                return Optional.of(room);
+            }
+        } catch (SQLException e) {
+            logger.error("Error al buscar room por ID", e);
+        }
+        return Optional.empty();
+    }
+
+    public Optional<Room> findByName(String name) {
+        String sql = "SELECT * FROM Room WHERE Name = ?";
+        try (Connection conn = dbManager.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, name);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                Room room = mapResultSetToRoom(rs);
+                loadMembers(room);
+                return Optional.of(room);
+            }
+        } catch (SQLException e) {
+            logger.error("Error al buscar room por nombre", e);
+        }
+        return Optional.empty();
+    }
+
+    public List<Room> findByServerUsername(String serverUsername) {
+        List<Room> rooms = new ArrayList<>();
+        String sql = "SELECT * FROM Room WHERE ServerUsername = ?";
+        try (Connection conn = dbManager.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, serverUsername);
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                Room room = mapResultSetToRoom(rs);
+                loadMembers(room);
+                rooms.add(room);
+            }
+        } catch (SQLException e) {
+            logger.error("Error al buscar rooms por servidor", e);
+        }
+        return rooms;
+    }
+
+    public List<Room> findActiveRooms(String serverUsername) {
+        List<Room> rooms = new ArrayList<>();
+        String sql = "SELECT * FROM Room WHERE ServerUsername = ? AND Estado = 'ACTIVO'";
+        try (Connection conn = dbManager.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, serverUsername);
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                Room room = mapResultSetToRoom(rs);
+                loadMembers(room);
+                rooms.add(room);
+            }
+        } catch (SQLException e) {
+            logger.error("Error al buscar rooms activos", e);
+        }
+        return rooms;
+    }
+
+    @Override
+    public List<Room> findAll() {
+        List<Room> rooms = new ArrayList<>();
+        String sql = "SELECT * FROM Room";
+        try (Connection conn = dbManager.getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                Room room = mapResultSetToRoom(rs);
+                loadMembers(room);
+                rooms.add(room);
+            }
+        } catch (SQLException e) {
+            logger.error("Error al obtener todos los rooms", e);
+        }
+        return rooms;
+    }
+
+    @Override
+    public Room save(Room room) {
+        String sql = "INSERT INTO Room (Name, CreatorConnectionId, CreatorUsername, Estado, FechaCreacion, ServerUsername) " +
+                     "VALUES (?, ?, ?, ?, ?, ?)";
+        try (Connection conn = dbManager.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            pstmt.setString(1, room.getName());
+            pstmt.setString(2, room.getCreatorConnectionId());
+            pstmt.setString(3, room.getCreatorUsername());
+            pstmt.setString(4, room.getEstado().name());
+            pstmt.setTimestamp(5, java.sql.Timestamp.valueOf(room.getFechaCreacion()));
+            pstmt.setString(6, room.getServerUsername());
+            pstmt.executeUpdate();
+            
+            ResultSet rs = pstmt.getGeneratedKeys();
+            if (rs.next()) {
+                room.setId(rs.getLong(1));
+            }
+            
+            // Guardar miembros
+            saveMembers(room);
+            
+            return room;
+        } catch (SQLException e) {
+            logger.error("Error al guardar room", e);
+            throw new RuntimeException("Error al guardar room", e);
+        }
+    }
+
+    @Override
+    public void delete(Long id) {
+        // Primero eliminar miembros
+        String deleteMembersSql = "DELETE FROM RoomMember WHERE RoomId = ?";
+        try (Connection conn = dbManager.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(deleteMembersSql)) {
+            pstmt.setLong(1, id);
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            logger.error("Error al eliminar miembros del room", e);
+        }
+        
+        // Luego eliminar el room
+        String sql = "DELETE FROM Room WHERE Id = ?";
+        try (Connection conn = dbManager.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setLong(1, id);
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            logger.error("Error al eliminar room", e);
+        }
+    }
+
+    @Override
+    public void update(Room room) {
+        String sql = "UPDATE Room SET Name = ?, Estado = ? WHERE Id = ?";
+        try (Connection conn = dbManager.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, room.getName());
+            pstmt.setString(2, room.getEstado().name());
+            pstmt.setLong(3, room.getId());
+            pstmt.executeUpdate();
+            
+            // Actualizar miembros
+            updateMembers(room);
+        } catch (SQLException e) {
+            logger.error("Error al actualizar room", e);
+        }
+    }
+
+    public void addMember(Long roomId, String connectionId) {
+        String sql = "INSERT INTO RoomMember (RoomId, ConnectionId) VALUES (?, ?) " +
+                     "ON DUPLICATE KEY UPDATE RoomId = RoomId";
+        try (Connection conn = dbManager.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setLong(1, roomId);
+            pstmt.setString(2, connectionId);
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            logger.error("Error al agregar miembro al room", e);
+        }
+    }
+
+    public void removeMember(Long roomId, String connectionId) {
+        String sql = "DELETE FROM RoomMember WHERE RoomId = ? AND ConnectionId = ?";
+        try (Connection conn = dbManager.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setLong(1, roomId);
+            pstmt.setString(2, connectionId);
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            logger.error("Error al eliminar miembro del room", e);
+        }
+    }
+
+    private void loadMembers(Room room) {
+        String sql = "SELECT ConnectionId FROM RoomMember WHERE RoomId = ?";
+        try (Connection conn = dbManager.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setLong(1, room.getId());
+            ResultSet rs = pstmt.executeQuery();
+            Set<String> members = new HashSet<>();
+            while (rs.next()) {
+                members.add(rs.getString("ConnectionId"));
+            }
+            room.setMembers(members);
+        } catch (SQLException e) {
+            logger.error("Error al cargar miembros del room", e);
+        }
+    }
+
+    private void saveMembers(Room room) {
+        if (room.getId() == null) {
+            return;
+        }
+        
+        // Eliminar miembros existentes
+        String deleteSql = "DELETE FROM RoomMember WHERE RoomId = ?";
+        try (Connection conn = dbManager.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(deleteSql)) {
+            pstmt.setLong(1, room.getId());
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            logger.error("Error al eliminar miembros existentes", e);
+        }
+        
+        // Insertar nuevos miembros
+        String insertSql = "INSERT INTO RoomMember (RoomId, ConnectionId) VALUES (?, ?)";
+        try (Connection conn = dbManager.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(insertSql)) {
+            for (String memberId : room.getMembers()) {
+                pstmt.setLong(1, room.getId());
+                pstmt.setString(2, memberId);
+                pstmt.addBatch();
+            }
+            pstmt.executeBatch();
+        } catch (SQLException e) {
+            logger.error("Error al guardar miembros del room", e);
+        }
+    }
+
+    private void updateMembers(Room room) {
+        saveMembers(room);
+    }
+
+    private Room mapResultSetToRoom(ResultSet rs) throws SQLException {
+        Room room = new Room();
+        room.setId(rs.getLong("Id"));
+        room.setName(rs.getString("Name"));
+        room.setCreatorConnectionId(rs.getString("CreatorConnectionId"));
+        room.setCreatorUsername(rs.getString("CreatorUsername"));
+        room.setEstado(Room.EstadoRoom.valueOf(rs.getString("Estado")));
+        
+        java.sql.Timestamp fechaCreacion = rs.getTimestamp("FechaCreacion");
+        if (fechaCreacion != null) {
+            room.setFechaCreacion(fechaCreacion.toLocalDateTime());
+        }
+        
+        room.setServerUsername(rs.getString("ServerUsername"));
+        return room;
+    }
+}
+

@@ -12,8 +12,14 @@ public class AuthService {
     private static final Logger logger = LoggerFactory.getLogger(AuthService.class);
     private final UsuarioRepository usuarioRepository;
     private static final int BCRYPT_ROUNDS = 12;
+    private String serverUsername;
 
     public AuthService() {
+        this.usuarioRepository = new UsuarioRepository();
+    }
+
+    public AuthService(String serverUsername) {
+        this.serverUsername = serverUsername;
         this.usuarioRepository = new UsuarioRepository();
     }
 

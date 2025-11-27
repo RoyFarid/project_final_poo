@@ -9,7 +9,15 @@ public class NetworkEvent {
         VIDEO_FRAME,
         ERROR,
         AUTH_RESULT,
-        REGISTER_RESULT
+        REGISTER_RESULT,
+        ROOM_CREATED,
+        ROOM_APPROVED,
+        ROOM_REJECTED,
+        ROOM_CLOSED,
+        ROOM_MEMBER_ADDED,
+        ROOM_MEMBER_REMOVED,
+        ROOM_MESSAGE,
+        ROOM_LIST
     }
 
     private final EventType type;
