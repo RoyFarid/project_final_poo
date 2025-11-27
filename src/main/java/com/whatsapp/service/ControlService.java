@@ -800,12 +800,20 @@ public class ControlService {
 
     private void handleRoomChatMessage(String payload, String senderConnectionId) {
         try {
-            String[] parts = payload.split("\\|", 2);
+            String[] parts = payload.split("\\|", -1);
             if (parts.length < 2) {
                 return;
             }
             Long roomId = Long.parseLong(decodeCredential(parts[0]));
-            String encodedMessage = parts[1];
+            String encodedMessage;
+            String senderEncoded;
+            if (parts.length >= 3) {
+                senderEncoded = parts[1];
+                encodedMessage = parts[2];
+            } else {
+                senderEncoded = encodeCredential(senderConnectionId);
+                encodedMessage = parts[1];
+            }
 
             Optional<Room> roomOpt = roomService.getRoom(roomId);
             if (roomOpt.isEmpty()) {
@@ -815,7 +823,7 @@ public class ControlService {
             // Publicar para UI del servidor
             RoomChatMessage selfMsg = parseRoomChatMessage(
                 encodeCredential(String.valueOf(roomId)) + "|" +
-                encodeCredential(senderConnectionId) + "|" +
+                senderEncoded + "|" +
                 encodedMessage
             );
             if (selfMsg != null) {
@@ -833,7 +841,7 @@ public class ControlService {
                     continue;
                 }
                 String forward = encodeCredential(String.valueOf(roomId)) + "|" +
-                                 encodeCredential(senderConnectionId) + "|" +
+                                 senderEncoded + "|" +
                                  encodedMessage;
                 sendControlMessage(memberId, CONTROL_ROOM_MESSAGE, forward);
             }

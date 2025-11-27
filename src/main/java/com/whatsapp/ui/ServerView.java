@@ -192,7 +192,9 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
         approveRoomButton.setOnAction(e -> handleApproveRoom());
         Button rejectRoomButton = new Button("Rechazar");
         rejectRoomButton.setOnAction(e -> handleRejectRoom());
-        roomControls.getChildren().addAll(approveRoomButton, rejectRoomButton);
+        Button refreshPendingButton = new Button("Actualizar");
+        refreshPendingButton.setOnAction(e -> refreshRoomsList());
+        roomControls.getChildren().addAll(approveRoomButton, rejectRoomButton, refreshPendingButton);
         
         Label activeRoomsLabel = new Label("Rooms Activos:");
         activeRoomsLabel.setFont(Font.font(12));
