@@ -43,6 +43,7 @@ public class ClientRoomChatView extends BorderPane implements com.whatsapp.netwo
     private final TextField messageField;
     private final Set<String> members;
     private final Map<String, String> pendingFileDownloads = new HashMap<>(); // fileName -> filePath
+    private final Map<String, String> fileNameToOriginal = new HashMap<>(); // fileName con timestamp -> nombre original
     private final Runnable onDispose;
 
     public ClientRoomChatView(Long roomId, String roomName, Set<String> members, String serverConnectionId, 
@@ -236,20 +237,35 @@ public class ClientRoomChatView extends BorderPane implements com.whatsapp.netwo
         }
         
         try {
-            int fileIconIndex = messageText.indexOf("📎");
-            int startIndex = fileIconIndex + 2;
-            int endIndex = messageText.indexOf(" (", startIndex);
-            if (endIndex == -1) {
-                endIndex = messageText.indexOf(" [", startIndex);
+            String fileName = extractFileNameFromMessage(messageText);
+            if (fileName.isEmpty()) {
+                showAlert("Error", "No se pudo identificar el nombre del archivo.", Alert.AlertType.WARNING);
+                return;
             }
-            if (endIndex == -1) {
-                endIndex = messageText.length();
-            }
-            String fileName = messageText.substring(startIndex, endIndex).trim();
             
+            // Buscar el archivo en los pendientes (intentar con nombre completo y base)
             String filePath = pendingFileDownloads.get(fileName);
+            if (filePath == null) {
+                // Intentar con nombre base (sin timestamp si tiene)
+                String baseFileName = fileName;
+                if (fileName.matches("^\\d+_.+")) {
+                    baseFileName = fileName.substring(fileName.indexOf('_') + 1);
+                    filePath = pendingFileDownloads.get(baseFileName);
+                }
+            }
+            
+            // Buscar en todos los valores del mapa por nombre parcial
+            if (filePath == null) {
+                for (Map.Entry<String, String> entry : pendingFileDownloads.entrySet()) {
+                    if (entry.getKey().contains(fileName) || fileName.contains(entry.getKey())) {
+                        filePath = entry.getValue();
+                        break;
+                    }
+                }
+            }
+            
             if (filePath == null || !new File(filePath).exists()) {
-                showAlert("Error", "El archivo no está disponible para descargar.", Alert.AlertType.WARNING);
+                showAlert("Error", "El archivo no está disponible para descargar. Espere a que se complete la transferencia.", Alert.AlertType.WARNING);
                 return;
             }
             
@@ -307,15 +323,33 @@ public class ClientRoomChatView extends BorderPane implements com.whatsapp.netwo
                     refreshMembers();
                     String senderName = aliasRegistry.getAliasOrDefault(senderId);
                     boolean isMine = senderId.equals(currentUser.getUsername());
-                    addFileMessage(senderName, roomFileMsg.getFileName(), roomFileMsg.getFileSize(), 
+                    String originalFileName = roomFileMsg.getFileName();
+                    addFileMessage(senderName, originalFileName, roomFileMsg.getFileSize(), 
                                  roomFileMsg.getFilePath(), isMine);
+                    // Si el archivo ya está disponible, asociarlo
+                    if (roomFileMsg.getFilePath() != null) {
+                        pendingFileDownloads.put(originalFileName, roomFileMsg.getFilePath());
+                    }
                 }
                 case FILE_PROGRESS -> {
                     if (event.getData() instanceof com.whatsapp.service.FileTransferService.FileProgress progress
                         && progress.getProgress() >= 100.0 && progress.isIncoming()) {
                         if (progress.getLocalPath() != null) {
-                            pendingFileDownloads.put(progress.getFileName(), progress.getLocalPath());
-                            refreshFileMessage(progress.getFileName(), progress.getLocalPath());
+                            String fileName = progress.getFileName(); // Nombre con timestamp
+                            String baseFileName = fileName;
+                            // Extraer nombre original (sin timestamp)
+                            if (fileName.matches("^\\d+_.+")) {
+                                baseFileName = fileName.substring(fileName.indexOf('_') + 1);
+                                fileNameToOriginal.put(fileName, baseFileName);
+                            }
+                            
+                            // Guardar con ambos nombres
+                            pendingFileDownloads.put(fileName, progress.getLocalPath());
+                            pendingFileDownloads.put(baseFileName, progress.getLocalPath());
+                            
+                            // Actualizar el mensaje si ya existe uno para este archivo
+                            refreshFileMessage(baseFileName, progress.getLocalPath());
+                            refreshFileMessage(fileName, progress.getLocalPath());
                         }
                     }
                 }
@@ -327,14 +361,36 @@ public class ClientRoomChatView extends BorderPane implements com.whatsapp.netwo
     }
 
     private void refreshFileMessage(String fileName, String filePath) {
-        for (int i = 0; i < messagesList.getItems().size(); i++) {
+        // Buscar el mensaje que contiene este archivo y actualizarlo si es necesario
+        for (int i = messagesList.getItems().size() - 1; i >= 0; i--) {
             String item = messagesList.getItems().get(i);
-            if (item.contains(fileName) && !item.contains("[Disponible para descargar]")) {
-                String updated = item + " [Disponible para descargar]";
-                messagesList.getItems().set(i, updated);
+            // Buscar mensaje de archivo que contenga este nombre (parcial o completo)
+            if (item.contains("📎") && (item.contains(fileName) || fileName.contains(extractFileNameFromMessage(item)))) {
+                if (!item.contains("[Disponible para descargar]")) {
+                    String updated = item + " [Disponible para descargar]";
+                    messagesList.getItems().set(i, updated);
+                }
                 break;
             }
         }
+    }
+    
+    private String extractFileNameFromMessage(String message) {
+        // Extraer el nombre del archivo del mensaje
+        // Formato: "[HH:mm:ss] Sender: 📎 fileName (size)"
+        if (!message.contains("📎")) {
+            return "";
+        }
+        int fileIconIndex = message.indexOf("📎");
+        int startIndex = fileIconIndex + 2; // Después del emoji y espacio
+        int endIndex = message.indexOf(" (", startIndex);
+        if (endIndex == -1) {
+            endIndex = message.indexOf(" [", startIndex);
+        }
+        if (endIndex == -1) {
+            endIndex = message.length();
+        }
+        return message.substring(startIndex, endIndex).trim();
     }
 
     public void onClose() {
