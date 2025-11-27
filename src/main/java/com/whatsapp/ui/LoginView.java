@@ -15,8 +15,6 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 
 public class LoginView {
-    private static final String SERVER_OWNER_USERNAME = "Roy";
-
     private final VBox root;
     private AuthService authService;
     private Usuario currentUser;
@@ -123,12 +121,6 @@ public class LoginView {
     }
 
     private void handleServerLogin(String username, String password) {
-        if (!username.equalsIgnoreCase(SERVER_OWNER_USERNAME)) {
-            statusLabel.setText("Solo el usuario " + SERVER_OWNER_USERNAME + " puede iniciar en modo servidor.");
-            statusLabel.setStyle("-fx-text-fill: red;");
-            return;
-        }
-
         try {
             ServerRuntime.markAsServerProcess();
             if (authService == null) {

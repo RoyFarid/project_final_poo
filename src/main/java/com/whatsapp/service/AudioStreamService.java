@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 
 import javax.sound.sampled.*;
 import java.io.*;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -33,6 +34,7 @@ public class AudioStreamService {
     private SourceDataLine speakers;
     private String currentServerConnectionId;
     private String currentTargetConnectionId;
+    private Set<String> broadcastTargets; // Para broadcast a múltiples clientes
     private String traceId;
 
     public AudioStreamService() {
@@ -42,6 +44,7 @@ public class AudioStreamService {
         this.micMuted = new AtomicBoolean(false);
         this.speakerMuted = new AtomicBoolean(false);
         this.frameIdGenerator = new AtomicInteger(0);
+        this.broadcastTargets = new HashSet<>();
         this.audioFormat = new AudioFormat(
             AudioFormat.Encoding.PCM_SIGNED,
             16000.0f,
@@ -84,6 +87,8 @@ public class AudioStreamService {
 
     public void stopStreaming() {
         isStreaming.set(false);
+        broadcastTargets.clear();
+        currentTargetConnectionId = null;
         if (executorService != null) {
             executorService.shutdownNow();
             executorService = null;
@@ -99,6 +104,95 @@ public class AudioStreamService {
             speakers = null;
         }
         logService.logInfo("Streaming de audio detenido", "AudioStreamService", traceId, null);
+    }
+
+    /**
+     * Inicia streaming de audio a todos los clientes conectados (broadcast)
+     */
+    public void startBroadcastStreaming(String serverConnectionId) {
+        if (isStreaming.get()) {
+            logger.warn("Audio ya se encuentra transmitiéndose");
+            return;
+        }
+        if (!connectionManager.isServerMode()) {
+            throw new IllegalStateException("Solo el servidor puede hacer broadcast");
+        }
+
+        Set<String> clients = connectionManager.getConnectedClients();
+        if (clients.isEmpty()) {
+            throw new IllegalStateException("No hay clientes conectados");
+        }
+
+        this.currentServerConnectionId = serverConnectionId;
+        this.broadcastTargets = new HashSet<>(clients);
+        this.executorService = Executors.newSingleThreadExecutor();
+
+        try {
+            DataLine.Info micInfo = new DataLine.Info(TargetDataLine.class, audioFormat);
+            if (!AudioSystem.isLineSupported(micInfo)) {
+                throw new LineUnavailableException("Micrófono no soportado para el formato requerido");
+            }
+            microphone = (TargetDataLine) AudioSystem.getLine(micInfo);
+            microphone.open(audioFormat);
+            microphone.start();
+
+            isStreaming.set(true);
+            executorService.submit(this::captureLoop);
+            logService.logInfo("Broadcast de audio iniciado a " + broadcastTargets.size() + " clientes", "AudioStreamService", traceId, null);
+        } catch (LineUnavailableException e) {
+            logger.error("No se pudo iniciar el broadcast de audio", e);
+            stopStreaming();
+        }
+    }
+
+    /**
+     * Inicia streaming de audio a clientes específicos
+     */
+    public void startStreamingToClients(String serverConnectionId, Set<String> targetConnectionIds) {
+        if (isStreaming.get()) {
+            logger.warn("Audio ya se encuentra transmitiéndose");
+            return;
+        }
+        if (!connectionManager.isServerMode()) {
+            throw new IllegalStateException("Solo el servidor puede enviar a múltiples clientes");
+        }
+
+        if (targetConnectionIds == null || targetConnectionIds.isEmpty()) {
+            throw new IllegalArgumentException("Debe especificar al menos un destinatario");
+        }
+
+        Set<String> connectedClients = connectionManager.getConnectedClients();
+        Set<String> validTargets = new HashSet<>();
+        for (String targetId : targetConnectionIds) {
+            if (connectedClients.contains(targetId)) {
+                validTargets.add(targetId);
+            }
+        }
+
+        if (validTargets.isEmpty()) {
+            throw new IllegalStateException("Ninguno de los destinatarios está conectado");
+        }
+
+        this.currentServerConnectionId = serverConnectionId;
+        this.broadcastTargets = validTargets;
+        this.executorService = Executors.newSingleThreadExecutor();
+
+        try {
+            DataLine.Info micInfo = new DataLine.Info(TargetDataLine.class, audioFormat);
+            if (!AudioSystem.isLineSupported(micInfo)) {
+                throw new LineUnavailableException("Micrófono no soportado para el formato requerido");
+            }
+            microphone = (TargetDataLine) AudioSystem.getLine(micInfo);
+            microphone.open(audioFormat);
+            microphone.start();
+
+            isStreaming.set(true);
+            executorService.submit(this::captureLoop);
+            logService.logInfo("Streaming de audio iniciado a " + validTargets.size() + " clientes seleccionados", "AudioStreamService", traceId, null);
+        } catch (LineUnavailableException e) {
+            logger.error("No se pudo iniciar el streaming de audio", e);
+            stopStreaming();
+        }
     }
 
     public void setMicrophoneMuted(boolean muted) {
@@ -134,23 +228,40 @@ public class AudioStreamService {
     }
 
     private void sendAudioChunk(byte[] chunk) throws IOException {
-        if (currentServerConnectionId == null || currentTargetConnectionId == null) {
+        if (currentServerConnectionId == null) {
             return;
         }
 
-        byte[] routedPayload = wrapPayload(DIRECTION_CLIENT_TO_SERVER, currentTargetConnectionId, chunk);
-        int frameId = frameIdGenerator.incrementAndGet();
-        MessageHeader header = new MessageHeader(
-            MessageHeader.MessageType.AUDIO,
-            routedPayload.length,
-            frameId,
-            calculateChecksum(routedPayload)
-        );
+        // Si hay múltiples destinatarios (broadcast), enviar a todos
+        Set<String> targets = broadcastTargets.isEmpty() && currentTargetConnectionId != null 
+            ? Collections.singleton(currentTargetConnectionId) 
+            : broadcastTargets;
 
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        baos.write(header.toBytes());
-        baos.write(routedPayload);
-        connectionManager.send(currentServerConnectionId, baos.toByteArray());
+        if (targets.isEmpty()) {
+            return;
+        }
+
+        int frameId = frameIdGenerator.incrementAndGet();
+
+        // Enviar chunk a cada destinatario
+        for (String targetId : targets) {
+            try {
+                byte[] routedPayload = wrapPayload(DIRECTION_CLIENT_TO_SERVER, targetId, chunk);
+                MessageHeader header = new MessageHeader(
+                    MessageHeader.MessageType.AUDIO,
+                    routedPayload.length,
+                    frameId,
+                    calculateChecksum(routedPayload)
+                );
+
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                baos.write(header.toBytes());
+                baos.write(routedPayload);
+                connectionManager.send(currentServerConnectionId, baos.toByteArray());
+            } catch (IOException e) {
+                logger.error("Error enviando chunk de audio a " + targetId, e);
+            }
+        }
     }
 
     public void handleIncomingPacket(byte[] data, String source) {

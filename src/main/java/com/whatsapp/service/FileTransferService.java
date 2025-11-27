@@ -16,6 +16,7 @@ import java.nio.file.*;
 import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -557,6 +558,69 @@ public class FileTransferService {
         public String getLocalPath() {
             return localPath;
         }
+    }
+
+    /**
+     * Envía un archivo a todos los clientes conectados (broadcast)
+     */
+    public void broadcastFile(String filePath, Long userId) throws IOException {
+        if (!connectionManager.isServerMode()) {
+            throw new IllegalStateException("Solo el servidor puede hacer broadcast de archivos");
+        }
+        
+        Set<String> clients = connectionManager.getConnectedClients();
+        if (clients.isEmpty()) {
+            logger.warn("No hay clientes conectados para hacer broadcast");
+            return;
+        }
+
+        // Obtener connectionId del servidor (cualquiera sirve para el broadcast)
+        String serverConnectionId = clients.iterator().next();
+        
+        // Enviar a todos los clientes
+        for (String clientId : clients) {
+            try {
+                sendFile(serverConnectionId, clientId, filePath, userId);
+            } catch (IOException e) {
+                logger.error("Error enviando archivo a " + clientId + " en broadcast", e);
+            }
+        }
+
+        logService.logInfo("Archivo broadcast enviado a " + clients.size() + " clientes", "FileTransferService", traceId, userId);
+    }
+
+    /**
+     * Envía un archivo a clientes específicos
+     */
+    public void sendFileToClients(Set<String> targetConnectionIds, String filePath, Long userId) throws IOException {
+        if (!connectionManager.isServerMode()) {
+            throw new IllegalStateException("Solo el servidor puede enviar archivos a múltiples clientes");
+        }
+
+        if (targetConnectionIds == null || targetConnectionIds.isEmpty()) {
+            logger.warn("No hay destinatarios especificados");
+            return;
+        }
+
+        Set<String> connectedClients = connectionManager.getConnectedClients();
+        String serverConnectionId = connectedClients.isEmpty() ? null : connectedClients.iterator().next();
+        
+        if (serverConnectionId == null) {
+            throw new IllegalStateException("No hay conexiones disponibles");
+        }
+
+        // Enviar a los clientes seleccionados
+        for (String clientId : targetConnectionIds) {
+            if (connectedClients.contains(clientId)) {
+                try {
+                    sendFile(serverConnectionId, clientId, filePath, userId);
+                } catch (IOException e) {
+                    logger.error("Error enviando archivo a " + clientId, e);
+                }
+            }
+        }
+
+        logService.logInfo("Archivo enviado a " + targetConnectionIds.size() + " clientes seleccionados", "FileTransferService", traceId, userId);
     }
 }
 

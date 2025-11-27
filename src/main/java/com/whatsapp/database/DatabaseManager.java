@@ -124,6 +124,9 @@ public class DatabaseManager {
                 // Los otros índices ya están definidos en las tablas
 
                 logger.info("Base de datos inicializada correctamente");
+                
+                // Crear usuarios por defecto si la base de datos está vacía
+                createDefaultUsers(stmt);
             } catch (SQLException e) {
                 logger.error("Error al crear las tablas", e);
                 throw new RuntimeException("No se pudieron crear las tablas: " + e.getMessage(), e);
@@ -134,6 +137,64 @@ public class DatabaseManager {
         } catch (Exception e) {
             logger.error("Error inesperado al inicializar la base de datos", e);
             throw new RuntimeException("No se pudo inicializar la base de datos: " + e.getMessage(), e);
+        }
+    }
+
+    private void createDefaultUsers(Statement stmt) {
+        try {
+            // Verificar si hay usuarios en la base de datos
+            java.sql.ResultSet rs = stmt.executeQuery("SELECT COUNT(*) as count FROM Usuario");
+            rs.next();
+            int userCount = rs.getInt("count");
+            rs.close();
+            
+            if (userCount > 0) {
+                logger.info("La base de datos ya tiene {} usuarios, no se crearán usuarios por defecto", userCount);
+                return;
+            }
+            
+            logger.info("La base de datos está vacía, creando usuarios por defecto...");
+            
+            // Crear usuarios por defecto
+            String[] defaultUsers = {
+                "admin", "admin123", "admin@whatsapp.local",
+                "usuario1", "usuario1", "usuario1@whatsapp.local",
+                "usuario2", "usuario2", "usuario2@whatsapp.local"
+            };
+            
+            for (int i = 0; i < defaultUsers.length; i += 3) {
+                String username = defaultUsers[i];
+                String password = defaultUsers[i + 1];
+                String email = defaultUsers[i + 2];
+                
+                // Verificar si el usuario ya existe (por si acaso)
+                rs = stmt.executeQuery("SELECT COUNT(*) as count FROM Usuario WHERE Username = '" + username + "'");
+                rs.next();
+                if (rs.getInt("count") > 0) {
+                    rs.close();
+                    logger.info("Usuario '{}' ya existe, omitiendo", username);
+                    continue;
+                }
+                rs.close();
+                
+                // Generar hash de contraseña
+                String salt = org.mindrot.jbcrypt.BCrypt.gensalt(12);
+                String passwordHash = org.mindrot.jbcrypt.BCrypt.hashpw(password, salt);
+                
+                // Insertar usuario
+                String insertSql = String.format(
+                    "INSERT INTO Usuario (Username, PasswordHash, Salt, Email, FechaCreacion, Estado) " +
+                    "VALUES ('%s', '%s', '%s', '%s', NOW(), 'ACTIVO')",
+                    username, passwordHash, salt, email
+                );
+                stmt.executeUpdate(insertSql);
+                logger.info("Usuario por defecto creado: {} / {}", username, password);
+            }
+            
+            logger.info("Usuarios por defecto creados exitosamente");
+        } catch (SQLException e) {
+            logger.warn("No se pudieron crear usuarios por defecto: {}", e.getMessage());
+            // No lanzar excepción, esto no es crítico
         }
     }
 

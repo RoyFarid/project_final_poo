@@ -59,7 +59,8 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
         topBox.setPadding(new Insets(10));
         topBox.setStyle("-fx-background-color: #128C7E;");
 
-        Label chatLabel = new Label("Chat con: " + getPeerDisplayName());
+        String chatTitle = "BROADCAST".equals(connectionId) ? "Sala Grupal" : ("Chat con: " + getPeerDisplayName());
+        Label chatLabel = new Label(chatTitle);
         chatLabel.setStyle("-fx-text-fill: white; -fx-font-size: 14px;");
 
         statusLabel = new Label("Conectado");
@@ -146,7 +147,8 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
             }
 
             String encodedMessage = Base64.getEncoder().encodeToString(message.getBytes(StandardCharsets.UTF_8));
-            String payload = "TO:" + connectionId + "|" + encodedMessage;
+            // Para sala grupal, usar BROADCAST en lugar de un connectionId específico
+            String payload = "TO:BROADCAST|" + encodedMessage;
 
             SendMessageCommand command = new SendMessageCommand(
                 networkFacade,
@@ -228,13 +230,18 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
         Platform.runLater(() -> {
             switch (event.getType()) {
                 case MESSAGE_RECEIVED -> {
-                    if (event.getData() instanceof ChatService.ChatMessage msg
-                        && msg.getSource().equals(connectionId)) {
-                        addMessage(getPeerDisplayName() + ": " + msg.getMessage());
+                    if (event.getData() instanceof ChatService.ChatMessage msg) {
+                        // En sala grupal (BROADCAST), mostrar todos los mensajes
+                        // En chat individual, solo mostrar mensajes del destinatario
+                        if ("BROADCAST".equals(connectionId) || msg.getSource().equals(connectionId)) {
+                            String senderName = aliasRegistry.getAliasOrDefault(msg.getSource());
+                            addMessage(senderName + ": " + msg.getMessage());
+                        }
                     }
                 }
                 case FILE_PROGRESS -> {
-                    if (!connectionId.equals(event.getSource())) {
+                    // En sala grupal, mostrar archivos de todos; en chat individual, solo del destinatario
+                    if (!"BROADCAST".equals(connectionId) && !connectionId.equals(event.getSource())) {
                         return;
                     }
                     if (event.getData() instanceof com.whatsapp.service.FileTransferService.FileProgress progress
@@ -247,9 +254,11 @@ public class ChatView extends BorderPane implements NetworkEventObserver {
                     }
                 }
                 case VIDEO_FRAME -> {
-                    if (event.getData() instanceof VideoStreamService.VideoFramePayload framePayload
-                        && framePayload.getPeerId().equals(connectionId)) {
-                        showVideoFrame(framePayload.getData());
+                    // En sala grupal, mostrar video de todos; en chat individual, solo del destinatario
+                    if (event.getData() instanceof VideoStreamService.VideoFramePayload framePayload) {
+                        if ("BROADCAST".equals(connectionId) || framePayload.getPeerId().equals(connectionId)) {
+                            showVideoFrame(framePayload.getData());
+                        }
                     }
                 }
                 case DISCONNECTED -> {

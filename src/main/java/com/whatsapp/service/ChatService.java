@@ -13,6 +13,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class ChatService {
@@ -90,7 +91,24 @@ public class ChatService {
 
                 if (message.startsWith("TO:")) {
                     if (connectionManager.isServerMode()) {
-                        routeChatMessage(source, message, header.getCorrelId());
+                        // Verificar si el cliente está aprobado
+                        if (!ControlService.isClientApproved(source)) {
+                            logger.info("Mensaje bloqueado: cliente no aprobado: " + source);
+                            return;
+                        }
+                        // Verificar si la comunicación cliente-cliente está bloqueada
+                        if (ControlService.isClientToClientBlocked()) {
+                            logger.info("Mensaje bloqueado: comunicación cliente-cliente deshabilitada");
+                            return;
+                        }
+                        
+                        // Si es BROADCAST, enviar a todos los aprobados (sala grupal)
+                        if (message.startsWith("TO:BROADCAST|")) {
+                            broadcastToApprovedClients(source, message, header.getCorrelId());
+                        } else {
+                            // Si es a un cliente específico, usar el enrutamiento normal
+                            routeChatMessage(source, message, header.getCorrelId());
+                        }
                     }
                     return;
                 }
@@ -130,6 +148,36 @@ public class ChatService {
         } catch (IOException e) {
             logger.error("Error reenviando mensaje a " + targetId, e);
         }
+    }
+
+    /**
+     * Envía mensaje a todos los clientes aprobados (sala grupal)
+     */
+    private void broadcastToApprovedClients(String source, String payload, int correlId) {
+        int separatorIndex = payload.indexOf('|');
+        if (separatorIndex <= 3) {
+            logger.warn("Payload inválido para broadcast: " + payload);
+            return;
+        }
+
+        String encodedMessage = payload.substring(separatorIndex + 1);
+        Set<String> approvedClients = ControlService.getApprovedClients();
+        
+        // Enviar a todos los clientes aprobados excepto al remitente
+        for (String clientId : approvedClients) {
+            if (clientId.equals(source)) {
+                continue; // No enviar al remitente
+            }
+            try {
+                String forwardPayload = "FROM:" + source + "|" + encodedMessage;
+                byte[] forwardBytes = forwardPayload.getBytes(StandardCharsets.UTF_8);
+                byte[] packet = buildChatPacket(forwardBytes, correlId, calculateChecksum(forwardBytes));
+                connectionManager.send(clientId, packet);
+            } catch (IOException e) {
+                logger.error("Error enviando mensaje grupal a " + clientId, e);
+            }
+        }
+        logger.info("Mensaje grupal enviado de " + source + " a " + (approvedClients.size() - 1) + " clientes");
     }
 
     private ChatMessage buildChatMessageFromPayload(String payload, int correlId, String fallbackSource) {
@@ -174,6 +222,69 @@ public class ChatService {
             checksum = (checksum << 1) ^ b;
         }
         return checksum;
+    }
+
+    /**
+     * Envía un mensaje a todos los clientes conectados (broadcast)
+     */
+    public void broadcastMessage(String message, Long userId) throws IOException {
+        if (!connectionManager.isServerMode()) {
+            throw new IllegalStateException("Solo el servidor puede hacer broadcast");
+        }
+        
+        Set<String> clients = connectionManager.getConnectedClients();
+        if (clients.isEmpty()) {
+            logger.warn("No hay clientes conectados para hacer broadcast");
+            return;
+        }
+
+        int correlId = correlIdGenerator.incrementAndGet();
+        byte[] messageBytes = message.getBytes(StandardCharsets.UTF_8);
+        int checksum = calculateChecksum(messageBytes);
+        byte[] fullMessage = buildChatPacket(messageBytes, correlId, checksum);
+
+        // Enviar a todos los clientes
+        for (String clientId : clients) {
+            try {
+                connectionManager.send(clientId, fullMessage);
+            } catch (IOException e) {
+                logger.error("Error enviando broadcast a " + clientId, e);
+            }
+        }
+
+        logService.logInfo("Broadcast enviado a " + clients.size() + " clientes", "ChatService", traceId, userId);
+    }
+
+    /**
+     * Envía un mensaje a clientes específicos
+     */
+    public void sendMessageToClients(Set<String> targetConnectionIds, String message, Long userId) throws IOException {
+        if (!connectionManager.isServerMode()) {
+            throw new IllegalStateException("Solo el servidor puede enviar a múltiples clientes");
+        }
+
+        if (targetConnectionIds == null || targetConnectionIds.isEmpty()) {
+            logger.warn("No hay destinatarios especificados");
+            return;
+        }
+
+        int correlId = correlIdGenerator.incrementAndGet();
+        byte[] messageBytes = message.getBytes(StandardCharsets.UTF_8);
+        int checksum = calculateChecksum(messageBytes);
+        byte[] fullMessage = buildChatPacket(messageBytes, correlId, checksum);
+
+        // Enviar a los clientes seleccionados
+        for (String clientId : targetConnectionIds) {
+            if (connectionManager.getConnectedClients().contains(clientId)) {
+                try {
+                    connectionManager.send(clientId, fullMessage);
+                } catch (IOException e) {
+                    logger.error("Error enviando mensaje a " + clientId, e);
+                }
+            }
+        }
+
+        logService.logInfo("Mensaje enviado a " + targetConnectionIds.size() + " clientes seleccionados", "ChatService", traceId, userId);
     }
 
     public static class ChatMessage {

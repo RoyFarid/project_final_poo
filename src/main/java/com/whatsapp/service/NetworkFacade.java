@@ -132,6 +132,48 @@ public class NetworkFacade implements NetworkEventObserver {
         audioStreamService.stopStreaming();
     }
 
+    // Métodos de broadcast para servidor
+    public void broadcastMessage(String message, Long userId) throws IOException {
+        chatService.broadcastMessage(message, userId);
+    }
+
+    public void sendMessageToClients(Set<String> targetConnectionIds, String message, Long userId) throws IOException {
+        chatService.sendMessageToClients(targetConnectionIds, message, userId);
+    }
+
+    public void broadcastFile(String filePath, Long userId) throws IOException {
+        fileTransferService.broadcastFile(filePath, userId);
+    }
+
+    public void sendFileToClients(Set<String> targetConnectionIds, String filePath, Long userId) throws IOException {
+        fileTransferService.sendFileToClients(targetConnectionIds, filePath, userId);
+    }
+
+    public void startBroadcastVideoCall(String serverConnectionId) {
+        videoStreamService.startBroadcastStreaming(serverConnectionId);
+        audioStreamService.startBroadcastStreaming(serverConnectionId);
+    }
+
+    public void startVideoCallToClients(String serverConnectionId, Set<String> targetConnectionIds) {
+        videoStreamService.startStreamingToClients(serverConnectionId, targetConnectionIds);
+        audioStreamService.startStreamingToClients(serverConnectionId, targetConnectionIds);
+    }
+
+    // Métodos de control del servidor
+    public void blockClientToClientCommunication() throws IOException {
+        ControlService controlService = new ControlService();
+        controlService.blockClientToClient();
+    }
+
+    public void unblockClientToClientCommunication() throws IOException {
+        ControlService controlService = new ControlService();
+        controlService.unblockClientToClient();
+    }
+
+    public boolean isClientToClientBlocked() {
+        return ControlService.isClientToClientBlocked();
+    }
+
     public void setMicrophoneMuted(boolean muted) {
         audioStreamService.setMicrophoneMuted(muted);
     }
@@ -151,6 +193,31 @@ public class NetworkFacade implements NetworkEventObserver {
 
     public boolean isConnected() {
         return connectionManager.isRunning();
+    }
+
+    // Métodos de gestión de clientes para el servidor
+    public void approveClient(String connectionId) throws IOException {
+        ControlService controlService = new ControlService();
+        controlService.approveClient(connectionId);
+    }
+
+    public void rejectClient(String connectionId) throws IOException {
+        ControlService controlService = new ControlService();
+        controlService.rejectClient(connectionId);
+    }
+
+    public void kickClient(String connectionId) throws IOException {
+        ControlService controlService = new ControlService();
+        controlService.kickClient(connectionId);
+    }
+
+    public Set<String> getPendingClients() {
+        ControlService controlService = new ControlService();
+        return controlService.getPendingClients();
+    }
+
+    public Set<String> getApprovedClients() {
+        return ControlService.getApprovedClients();
     }
 
     @Override

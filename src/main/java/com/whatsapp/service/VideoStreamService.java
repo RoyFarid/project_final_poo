@@ -12,6 +12,7 @@ import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.*;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -26,6 +27,7 @@ public class VideoStreamService {
     private ScheduledExecutorService executorService;
     private String currentServerConnectionId;
     private String currentTargetConnectionId;
+    private Set<String> broadcastTargets; // Para broadcast a múltiples clientes
     private String traceId;
     private static final byte DIRECTION_CLIENT_TO_SERVER = 0;
     private static final byte DIRECTION_SERVER_TO_CLIENT = 1;
@@ -39,6 +41,7 @@ public class VideoStreamService {
         this.logService = LogService.getInstance();
         this.frameIdGenerator = new AtomicInteger(0);
         this.isStreaming = new AtomicBoolean(false);
+        this.broadcastTargets = new HashSet<>();
         this.traceId = logService.generateTraceId();
     }
 
@@ -56,7 +59,7 @@ public class VideoStreamService {
     }
 
     private void sendFrameHeartbeat() {
-        if (!isStreaming.get() || currentServerConnectionId == null || currentTargetConnectionId == null) {
+        if (!isStreaming.get() || currentServerConnectionId == null) {
             return;
         }
 
@@ -67,20 +70,36 @@ public class VideoStreamService {
                 return;
             }
 
-            byte[] routedPayload = wrapPayload(DIRECTION_CLIENT_TO_SERVER, currentTargetConnectionId, frameData);
-            MessageHeader header = new MessageHeader(
-                MessageHeader.MessageType.VIDEO,
-                routedPayload.length,
-                frameId,
-                calculateChecksum(routedPayload)
-            );
+            // Si hay múltiples destinatarios (broadcast), enviar a todos
+            Set<String> targets = broadcastTargets.isEmpty() && currentTargetConnectionId != null 
+                ? Collections.singleton(currentTargetConnectionId) 
+                : broadcastTargets;
 
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            baos.write(header.toBytes());
-            baos.write(routedPayload);
-            connectionManager.send(currentServerConnectionId, baos.toByteArray());
-        } catch (IOException e) {
-            logger.error("Error enviando frame de video", e);
+            if (targets.isEmpty()) {
+                return;
+            }
+
+            // Enviar frame a cada destinatario
+            for (String targetId : targets) {
+                try {
+                    byte[] routedPayload = wrapPayload(DIRECTION_CLIENT_TO_SERVER, targetId, frameData);
+                    MessageHeader header = new MessageHeader(
+                        MessageHeader.MessageType.VIDEO,
+                        routedPayload.length,
+                        frameId,
+                        calculateChecksum(routedPayload)
+                    );
+
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    baos.write(header.toBytes());
+                    baos.write(routedPayload);
+                    connectionManager.send(currentServerConnectionId, baos.toByteArray());
+                } catch (IOException e) {
+                    logger.error("Error enviando frame de video a " + targetId, e);
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Error en sendFrameHeartbeat", e);
         }
     }
 
@@ -136,6 +155,8 @@ public class VideoStreamService {
 
     public void stopStreaming() {
         isStreaming.set(false);
+        broadcastTargets.clear();
+        currentTargetConnectionId = null;
         if (executorService != null) {
             executorService.shutdownNow();
         }
@@ -143,6 +164,67 @@ public class VideoStreamService {
             webcam.close();
         }
         logService.logInfo("Streaming de video detenido", "VideoStreamService", traceId, null);
+    }
+
+    /**
+     * Inicia streaming de video a todos los clientes conectados (broadcast)
+     */
+    public void startBroadcastStreaming(String serverConnectionId) {
+        if (isStreaming.get()) {
+            throw new IllegalStateException("Ya se está transmitiendo video");
+        }
+        if (!connectionManager.isServerMode()) {
+            throw new IllegalStateException("Solo el servidor puede hacer broadcast");
+        }
+
+        Set<String> clients = connectionManager.getConnectedClients();
+        if (clients.isEmpty()) {
+            throw new IllegalStateException("No hay clientes conectados");
+        }
+
+        this.currentServerConnectionId = serverConnectionId;
+        this.broadcastTargets = new HashSet<>(clients);
+        this.executorService = Executors.newSingleThreadScheduledExecutor();
+        isStreaming.set(true);
+
+        executorService.scheduleAtFixedRate(this::sendFrameHeartbeat, 0, 300, TimeUnit.MILLISECONDS);
+        logService.logInfo("Broadcast de video iniciado a " + broadcastTargets.size() + " clientes", "VideoStreamService", traceId, null);
+    }
+
+    /**
+     * Inicia streaming de video a clientes específicos
+     */
+    public void startStreamingToClients(String serverConnectionId, Set<String> targetConnectionIds) {
+        if (isStreaming.get()) {
+            throw new IllegalStateException("Ya se está transmitiendo video");
+        }
+        if (!connectionManager.isServerMode()) {
+            throw new IllegalStateException("Solo el servidor puede enviar a múltiples clientes");
+        }
+
+        if (targetConnectionIds == null || targetConnectionIds.isEmpty()) {
+            throw new IllegalArgumentException("Debe especificar al menos un destinatario");
+        }
+
+        Set<String> connectedClients = connectionManager.getConnectedClients();
+        Set<String> validTargets = new HashSet<>();
+        for (String targetId : targetConnectionIds) {
+            if (connectedClients.contains(targetId)) {
+                validTargets.add(targetId);
+            }
+        }
+
+        if (validTargets.isEmpty()) {
+            throw new IllegalStateException("Ninguno de los destinatarios está conectado");
+        }
+
+        this.currentServerConnectionId = serverConnectionId;
+        this.broadcastTargets = validTargets;
+        this.executorService = Executors.newSingleThreadScheduledExecutor();
+        isStreaming.set(true);
+
+        executorService.scheduleAtFixedRate(this::sendFrameHeartbeat, 0, 300, TimeUnit.MILLISECONDS);
+        logService.logInfo("Streaming de video iniciado a " + validTargets.size() + " clientes seleccionados", "VideoStreamService", traceId, null);
     }
 
     private byte[] captureFrame() {

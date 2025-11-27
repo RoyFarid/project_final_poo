@@ -24,6 +24,8 @@ public class ControlService {
     private final AtomicInteger correlIdGenerator;
     private String traceId;
     private final UserAliasRegistry aliasRegistry;
+    private static volatile boolean clientToClientBlocked = false;
+    private static final Set<String> approvedClients = java.util.concurrent.ConcurrentHashMap.newKeySet();
     
     // Tipos de mensajes de control
     public static final byte CONTROL_USER_LIST = 1;
@@ -34,6 +36,12 @@ public class ControlService {
     public static final byte CONTROL_AUTH_RESPONSE = 6;
     public static final byte CONTROL_REGISTER_REQUEST = 7;
     public static final byte CONTROL_REGISTER_RESPONSE = 8;
+    public static final byte CONTROL_BLOCK_CLIENT_TO_CLIENT = 9;
+    public static final byte CONTROL_UNBLOCK_CLIENT_TO_CLIENT = 10;
+    public static final byte CONTROL_CLIENT_APPROVED = 11;
+    public static final byte CONTROL_CLIENT_REJECTED = 12;
+    public static final byte CONTROL_CLIENT_KICKED = 13;
+    public static final byte CONTROL_CLIENT_STATUS = 14;
 
     public ControlService() {
         this.connectionManager = ConnectionManager.getInstance();
@@ -89,6 +97,7 @@ public class ControlService {
      */
     public void notifyUserDisconnected(String userId) throws IOException {
         aliasRegistry.removeAlias(userId);
+        approvedClients.remove(userId); // Eliminar de aprobados al desconectarse
         sendControlMessageToAll(CONTROL_USER_DISCONNECTED, userId);
         broadcastUserList();
     }
@@ -246,6 +255,49 @@ public class ControlService {
                             source
                         ));
                         break;
+                    case CONTROL_BLOCK_CLIENT_TO_CLIENT:
+                        if (connectionManager.isServerMode()) {
+                            clientToClientBlocked = true;
+                            sendControlMessageToAll(CONTROL_BLOCK_CLIENT_TO_CLIENT, "1");
+                            logger.info("Comunicación cliente-cliente bloqueada");
+                        }
+                        break;
+                    case CONTROL_UNBLOCK_CLIENT_TO_CLIENT:
+                        if (connectionManager.isServerMode()) {
+                            clientToClientBlocked = false;
+                            sendControlMessageToAll(CONTROL_UNBLOCK_CLIENT_TO_CLIENT, "0");
+                            logger.info("Comunicación cliente-cliente desbloqueada");
+                        }
+                        break;
+                    case CONTROL_CLIENT_APPROVED:
+                        approvedClients.add(source);
+                        sendControlMessage(source, CONTROL_CLIENT_STATUS, "APPROVED");
+                        logger.info("Cliente aprobado: " + source);
+                        break;
+                    case CONTROL_CLIENT_REJECTED:
+                        approvedClients.remove(source);
+                        sendControlMessage(source, CONTROL_CLIENT_STATUS, "REJECTED");
+                        logger.info("Cliente rechazado: " + source);
+                        break;
+                    case CONTROL_CLIENT_KICKED:
+                        approvedClients.remove(source);
+                        sendControlMessage(source, CONTROL_CLIENT_STATUS, "KICKED");
+                        logger.info("Cliente expulsado: " + source);
+                        break;
+                    case CONTROL_CLIENT_STATUS:
+                        // El cliente recibe su estado de verificación
+                        String status = controlData;
+                        if ("APPROVED".equals(status)) {
+                            approvedClients.add(source);
+                        } else {
+                            approvedClients.remove(source);
+                        }
+                        eventAggregator.publish(new NetworkEvent(
+                            NetworkEvent.EventType.CONNECTED,
+                            status,
+                            "SERVER_STATUS"
+                        ));
+                        break;
                 }
             }
         } catch (Exception e) {
@@ -354,6 +406,74 @@ public class ControlService {
             checksum = (checksum << 1) ^ b;
         }
         return checksum;
+    }
+
+    public static boolean isClientToClientBlocked() {
+        return clientToClientBlocked;
+    }
+
+    public void blockClientToClient() throws IOException {
+        if (!connectionManager.isServerMode()) {
+            throw new IllegalStateException("Solo el servidor puede bloquear la comunicación");
+        }
+        clientToClientBlocked = true;
+        sendControlMessageToAll(CONTROL_BLOCK_CLIENT_TO_CLIENT, "1");
+        logger.info("Comunicación cliente-cliente bloqueada por el servidor");
+    }
+
+    public void unblockClientToClient() throws IOException {
+        if (!connectionManager.isServerMode()) {
+            throw new IllegalStateException("Solo el servidor puede desbloquear la comunicación");
+        }
+        clientToClientBlocked = false;
+        sendControlMessageToAll(CONTROL_UNBLOCK_CLIENT_TO_CLIENT, "0");
+        logger.info("Comunicación cliente-cliente desbloqueada por el servidor");
+    }
+
+    public static boolean isClientApproved(String connectionId) {
+        return approvedClients.contains(connectionId);
+    }
+
+    public static Set<String> getApprovedClients() {
+        return new java.util.HashSet<>(approvedClients);
+    }
+
+    public void approveClient(String connectionId) throws IOException {
+        if (!connectionManager.isServerMode()) {
+            throw new IllegalStateException("Solo el servidor puede aprobar clientes");
+        }
+        approvedClients.add(connectionId);
+        sendControlMessage(connectionId, CONTROL_CLIENT_APPROVED, "APPROVED");
+        broadcastUserList(); // Actualizar lista de usuarios
+        logger.info("Cliente aprobado: " + connectionId);
+    }
+
+    public void rejectClient(String connectionId) throws IOException {
+        if (!connectionManager.isServerMode()) {
+            throw new IllegalStateException("Solo el servidor puede rechazar clientes");
+        }
+        approvedClients.remove(connectionId);
+        sendControlMessage(connectionId, CONTROL_CLIENT_REJECTED, "REJECTED");
+        logger.info("Cliente rechazado: " + connectionId);
+    }
+
+    public void kickClient(String connectionId) throws IOException {
+        if (!connectionManager.isServerMode()) {
+            throw new IllegalStateException("Solo el servidor puede expulsar clientes");
+        }
+        approvedClients.remove(connectionId);
+        sendControlMessage(connectionId, CONTROL_CLIENT_KICKED, "KICKED");
+        // Desconectar al cliente
+        connectionManager.disconnectClient(connectionId);
+        broadcastUserList();
+        logger.info("Cliente expulsado: " + connectionId);
+    }
+
+    public Set<String> getPendingClients() {
+        Set<String> allClients = connectionManager.getConnectedClients();
+        Set<String> pending = new java.util.HashSet<>(allClients);
+        pending.removeAll(approvedClients);
+        return pending;
     }
 
     private void handleAuthRequest(String payload, String source) {

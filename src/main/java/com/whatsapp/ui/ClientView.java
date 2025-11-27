@@ -26,6 +26,8 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
     private final String connectedHost;
     private final int connectedPort;
     private final Label statusLabel;
+    private boolean isApproved = false;
+    private Button openChatButton;
 
     public ClientView(Usuario currentUser, NetworkFacade networkFacade, String serverHost, int serverPort) {
         this.currentUser = currentUser;
@@ -39,7 +41,7 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
 
         EventAggregator.getInstance().subscribe(this);
         setupUI();
-        updateStatus("Conectado a " + connectedHost + ":" + connectedPort);
+        updateStatus("Estado: Pendiente de aprobación - Esperando verificación del servidor");
         requestUserListRefresh();
     }
 
@@ -66,10 +68,10 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
         VBox centerBox = new VBox(10);
         centerBox.setPadding(new Insets(20));
 
-        Label usersLabel = new Label("Usuarios Conectados (Haz click para chatear):");
+        Label usersLabel = new Label("Usuarios en la Sala:");
         usersLabel.setFont(Font.font(14));
 
-        usersList.setPrefHeight(400);
+        usersList.setPrefHeight(300);
         usersList.setCellFactory(list -> new javafx.scene.control.ListCell<>() {
             @Override
             protected void updateItem(ControlService.UserDescriptor item, boolean empty) {
@@ -77,14 +79,14 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
                 setText(empty || item == null ? null : item.getDisplayName());
             }
         });
-        usersList.setOnMouseClicked(e -> {
-            ControlService.UserDescriptor selected = usersList.getSelectionModel().getSelectedItem();
-            if (selected != null) {
-                openChatWindow(selected.getConnectionId(), selected.getDisplayName());
-            }
-        });
 
-        centerBox.getChildren().addAll(usersLabel, usersList);
+        openChatButton = new Button("Abrir Sala Grupal");
+        openChatButton.setStyle("-fx-background-color: #25D366; -fx-text-fill: white; -fx-font-size: 14px;");
+        openChatButton.setDisable(true);
+        openChatButton.setOnAction(e -> openGroupChat());
+        openChatButton.setPrefWidth(200);
+
+        centerBox.getChildren().addAll(usersLabel, usersList, openChatButton);
         setCenter(centerBox);
 
         // Panel inferior - Estado
@@ -107,16 +109,22 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
         });
     }
 
-    private void openChatWindow(String connectionId, String displayName) {
+    private void openGroupChat() {
+        if (!isApproved) {
+            showAlert("Error", "Debes ser aprobado por el servidor para usar el chat.", Alert.AlertType.WARNING);
+            return;
+        }
+        
         String serverConnectionId = networkFacade.getPrimaryConnectionId();
         if (serverConnectionId == null) {
             showAlert("Error", "No hay conexión activa con el servidor.", Alert.AlertType.ERROR);
             return;
         }
 
-        ChatView chatView = new ChatView(currentUser, connectionId, serverConnectionId, networkFacade);
+        // Para sala grupal, usar "BROADCAST" como connectionId
+        ChatView chatView = new ChatView(currentUser, "BROADCAST", serverConnectionId, networkFacade);
         javafx.stage.Stage chatStage = new javafx.stage.Stage();
-        chatStage.setTitle("Chat con " + displayName);
+        chatStage.setTitle("Sala Grupal");
         chatStage.setScene(new javafx.scene.Scene(chatView, 600, 500));
         chatStage.show();
     }
@@ -147,6 +155,26 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
     @Override
     public void onNetworkEvent(NetworkEvent event) {
         Platform.runLater(() -> {
+            if (event.getType() == NetworkEvent.EventType.CONNECTED && "SERVER_STATUS".equals(event.getSource())) {
+                // Evento de estado de verificación
+                String status = (String) event.getData();
+                if ("APPROVED".equals(status)) {
+                    isApproved = true;
+                    updateStatus("Estado: Aprobado - Puedes usar todas las funciones");
+                    openChatButton.setDisable(false);
+                } else if ("REJECTED".equals(status)) {
+                    isApproved = false;
+                    updateStatus("Estado: Rechazado - Esperando aprobación del servidor");
+                    openChatButton.setDisable(true);
+                } else if ("KICKED".equals(status)) {
+                    isApproved = false;
+                    updateStatus("Estado: Expulsado del servidor");
+                    openChatButton.setDisable(true);
+                    showAlert("Expulsado", "Has sido expulsado del servidor por el administrador.", Alert.AlertType.WARNING);
+                }
+                return;
+            }
+            
             if (!(event.getData() instanceof String)) {
                 return;
             }
