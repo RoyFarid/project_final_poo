@@ -6,6 +6,7 @@ import com.whatsapp.network.observer.EventAggregator;
 import com.whatsapp.network.observer.NetworkEvent;
 import com.whatsapp.network.observer.NetworkEventObserver;
 import com.whatsapp.service.ChatService;
+import com.whatsapp.service.ControlService;
 import com.whatsapp.service.NetworkFacade;
 import com.whatsapp.service.RoomService;
 import com.whatsapp.service.UserAliasRegistry;
@@ -44,6 +45,7 @@ public class RoomChatView extends BorderPane implements NetworkEventObserver {
     private final UserAliasRegistry aliasRegistry;
     private final Map<String, String> memberConnectionIds = new HashMap<>();
     private boolean isServerMode;
+    private final ControlService controlService;
 
     public RoomChatView(Usuario currentUser, Room room, NetworkFacade networkFacade, boolean isServerMode) {
         this.currentUser = currentUser;
@@ -54,6 +56,7 @@ public class RoomChatView extends BorderPane implements NetworkEventObserver {
         this.membersList = new ListView<>();
         this.aliasRegistry = UserAliasRegistry.getInstance();
         this.isServerMode = isServerMode;
+        this.controlService = new ControlService();
 
         // Cargar miembros del room
         loadRoomMembers();
@@ -176,21 +179,16 @@ public class RoomChatView extends BorderPane implements NetworkEventObserver {
         }
 
         try {
-            // Enviar mensaje a todos los miembros del room
-            for (String memberConnectionId : getDeliverableMembers()) {
-                if (isServerMode) {
-                    // Si es servidor, enviar directamente
-                    String encodedMessage = Base64.getEncoder().encodeToString(message.getBytes(StandardCharsets.UTF_8));
-                    String payload = "FROM:" + currentUser.getUsername() + "|" + encodedMessage;
-                    networkFacade.sendMessage(memberConnectionId, payload, currentUser.getId(), memberConnectionId);
-                } else {
-                    // Si es cliente, usar el formato TO: para que el servidor lo reenvíe
-                    String serverConnectionId = networkFacade.getPrimaryConnectionId();
-                    if (serverConnectionId != null) {
-                        String encodedMessage = Base64.getEncoder().encodeToString(message.getBytes(StandardCharsets.UTF_8));
-                        String payload = "TO:" + memberConnectionId + "|" + encodedMessage;
-                        networkFacade.sendMessage(serverConnectionId, payload, currentUser.getId(), memberConnectionId);
-                    }
+            String encodedMessage = Base64.getEncoder().encodeToString(message.getBytes(StandardCharsets.UTF_8));
+            String payload = Base64.getEncoder().encodeToString(String.valueOf(room.getId()).getBytes(StandardCharsets.UTF_8)) + "|" + encodedMessage;
+            if (isServerMode) {
+                for (String memberConnectionId : getDeliverableMembers()) {
+                    controlService.sendControlMessage(memberConnectionId, ControlService.CONTROL_ROOM_MESSAGE, payload);
+                }
+            } else {
+                String serverConnectionId = networkFacade.getPrimaryConnectionId();
+                if (serverConnectionId != null) {
+                    controlService.sendControlMessage(serverConnectionId, ControlService.CONTROL_ROOM_MESSAGE, payload);
                 }
             }
 
@@ -377,6 +375,15 @@ public class RoomChatView extends BorderPane implements NetworkEventObserver {
                         memberConnectionIds.remove(memberEvent.getConnectionId());
                         refreshMembersList();
                         addMessage("Miembro salió del room");
+                    }
+                }
+                case ROOM_MESSAGE -> {
+                    if (event.getData() instanceof ControlService.RoomChatMessage roomMsg
+                        && roomMsg.getRoomId().equals(room.getId())) {
+                        String senderId = roomMsg.getSenderConnectionId();
+                        memberConnectionIds.put(senderId, aliasRegistry.getAliasOrDefault(senderId));
+                        refreshMembersList();
+                        addMessage(aliasRegistry.getAliasOrDefault(senderId) + ": " + roomMsg.getMessage());
                     }
                 }
                 default -> { }
