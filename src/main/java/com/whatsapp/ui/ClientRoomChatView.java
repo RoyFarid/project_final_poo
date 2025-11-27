@@ -11,8 +11,11 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 
 import java.io.File;
+import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -45,6 +48,8 @@ public class ClientRoomChatView extends BorderPane implements com.whatsapp.netwo
     private final Map<String, String> pendingFileDownloads = new HashMap<>(); // fileName -> filePath
     private final Map<String, String> fileNameToOriginal = new HashMap<>(); // fileName con timestamp -> nombre original
     private final Runnable onDispose;
+    private ImageView remoteVideoView;
+    private Label videoStatusLabel;
 
     public ClientRoomChatView(Long roomId, String roomName, Set<String> members, String serverConnectionId, 
                               Usuario currentUser, NetworkFacade networkFacade, Runnable onDispose) {
