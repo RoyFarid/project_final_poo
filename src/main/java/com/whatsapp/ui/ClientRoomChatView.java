@@ -11,8 +11,11 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 
 import java.io.File;
+import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -45,6 +48,8 @@ public class ClientRoomChatView extends BorderPane implements com.whatsapp.netwo
     private final Map<String, String> pendingFileDownloads = new HashMap<>(); // fileName -> filePath
     private final Map<String, String> fileNameToOriginal = new HashMap<>(); // fileName con timestamp -> nombre original
     private final Runnable onDispose;
+    private ImageView remoteVideoView;
+    private Label videoStatusLabel;
 
     public ClientRoomChatView(Long roomId, String roomName, Set<String> members, String serverConnectionId, 
                               Usuario currentUser, NetworkFacade networkFacade, Runnable onDispose) {
@@ -95,13 +100,15 @@ public class ClientRoomChatView extends BorderPane implements com.whatsapp.netwo
         VBox membersBox = new VBox(5, membersLabel, membersList);
         membersBox.setPadding(new Insets(0, 0, 0, 10));
 
-        // Placeholder de video (pendiente de implementar)
-        videoBox.setPrefSize(220, 180);
-        videoBox.setStyle("-fx-border-color: #cccccc; -fx-background-color: #f5f5f5;");
-        Label videoLabel = new Label("Video remoto (próximamente)");
-        videoLabel.setStyle("-fx-text-fill: #666;");
+        // Video remoto
+        remoteVideoView = new ImageView();
+        remoteVideoView.setFitWidth(220);
+        remoteVideoView.setPreserveRatio(true);
+        remoteVideoView.setStyle("-fx-border-color: #cccccc; -fx-background-color: #000;");
+        videoStatusLabel = new Label("Video: sin señal");
+        videoStatusLabel.setStyle("-fx-text-fill: #666;");
         videoBox.setPadding(new Insets(8));
-        videoBox.getChildren().setAll(videoLabel);
+        videoBox.getChildren().setAll(new Label("Video remoto"), remoteVideoView, videoStatusLabel);
         VBox rightBox = new VBox(10, membersBox, videoBox);
 
         HBox center = new HBox(10, messagesList, rightBox);
@@ -339,11 +346,31 @@ public class ClientRoomChatView extends BorderPane implements com.whatsapp.netwo
                         }
                     }
                 }
+                case VIDEO_FRAME -> {
+                    if (event.getData() instanceof com.whatsapp.service.VideoStreamService.VideoFramePayload framePayload) {
+                        String peerId = framePayload.getPeerId();
+                        if (members.contains(peerId)) {
+                            showVideoFrame(framePayload.getData());
+                        }
+                    }
+                }
                 default -> {
                     // Otros tipos de eventos no manejados
                 }
             }
         });
+    }
+
+    private void showVideoFrame(byte[] data) {
+        try {
+            Image image = new Image(new ByteArrayInputStream(data));
+            remoteVideoView.setImage(image);
+            videoStatusLabel.setText("Video: recibiendo");
+            videoStatusLabel.setStyle("-fx-text-fill: #25D366;");
+        } catch (Exception e) {
+            videoStatusLabel.setText("Video: error al decodificar");
+            videoStatusLabel.setStyle("-fx-text-fill: #dc3545;");
+        }
     }
 
     private void refreshFileMessage(String fileName, String filePath) {
