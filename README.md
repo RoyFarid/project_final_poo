@@ -1,4 +1,4 @@
-# WhatsApp Clone
+# RoomWave
 
 Aplicación de mensajería instantánea en Java con chat, transferencia de archivos y videollamadas.
 
