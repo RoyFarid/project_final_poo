@@ -26,6 +26,7 @@ public class ControlService {
     private String traceId;
     private final UserAliasRegistry aliasRegistry;
     private final RoomService roomService;
+    private static final Map<String, PendingRoomFile> pendingRoomFiles = new java.util.concurrent.ConcurrentHashMap<>();
     
     // Tipos de mensajes de control
     public static final byte CONTROL_USER_LIST = 1;
@@ -898,11 +899,18 @@ public class ControlService {
                 return;
             }
             Room room = roomOpt.get();
+            String senderId = decodeCredential(senderEncoded);
             
+            // Caso cliente -> servidor: registrar pendiente y esperar a recibir el archivo
+            if (connectionManager.isServerMode() && (filePath == null || filePath.isBlank())) {
+                registerPendingRoomFile(senderId, fileName, fileSize, roomId);
+                return;
+            }
+
             // Publicar para UI del servidor
             RoomFileMessage selfMsg = new RoomFileMessage(
                 roomId,
-                decodeCredential(senderEncoded),
+                senderId,
                 fileName,
                 fileSize,
                 filePath
@@ -930,6 +938,63 @@ public class ControlService {
             }
         } catch (Exception e) {
             logger.warn("Error manejando mensaje de archivo de room", e);
+        }
+    }
+
+    private static String pendingFileKey(String senderId, String fileName, long fileSize) {
+        return senderId + "|" + fileName + "|" + fileSize;
+    }
+
+    public static void registerPendingRoomFile(String senderId, String fileName, long fileSize, Long roomId) {
+        if (senderId == null || fileName == null || roomId == null) {
+            return;
+        }
+        pendingRoomFiles.put(pendingFileKey(senderId, fileName, fileSize), new PendingRoomFile(roomId, fileName, fileSize));
+    }
+
+    public static void relayPendingRoomFile(String senderId, String fileName, long fileSize, String localPath) {
+        try {
+            String key = pendingFileKey(senderId, fileName, fileSize);
+            PendingRoomFile pending = pendingRoomFiles.remove(key);
+            if (pending == null) {
+                return;
+            }
+            RoomService roomService = RoomService.getInstance();
+            Optional<Room> roomOpt = roomService.getRoom(pending.roomId());
+            if (roomOpt.isEmpty()) {
+                return;
+            }
+            Room room = roomOpt.get();
+            ControlService controlService = new ControlService();
+            FileTransferService fileTransferService = new FileTransferService();
+
+            // Notificar a miembros y enviar archivo
+            for (String memberId : room.getMembers()) {
+                if (memberId == null || memberId.equals(senderId) || memberId.startsWith("SERVER_")) {
+                    continue;
+                }
+                if (!ConnectionManager.getInstance().getConnectedClients().contains(memberId)) {
+                    continue;
+                }
+                String forward = controlService.encodeCredential(String.valueOf(room.getId())) + "|" +
+                                 controlService.encodeCredential(senderId) + "|" +
+                                 controlService.encodeCredential(fileName) + "|" +
+                                 controlService.encodeCredential(String.valueOf(fileSize)) + "|";
+                try {
+                    controlService.sendControlMessage(memberId, CONTROL_ROOM_FILE, forward);
+                    fileTransferService.sendFile(memberId, memberId, localPath, null);
+                } catch (Exception e) {
+                    logger.warn("No se pudo retransmitir archivo de room a {}", memberId, e);
+                }
+            }
+            // Publicar para UI del servidor
+            EventAggregator.getInstance().publish(new NetworkEvent(
+                NetworkEvent.EventType.ROOM_FILE,
+                new RoomFileMessage(room.getId(), senderId, fileName, fileSize, localPath),
+                senderId
+            ));
+        } catch (Exception e) {
+            logger.warn("Error en relay de archivo de room", e);
         }
     }
 
@@ -1035,6 +1100,8 @@ public class ControlService {
             return filePath;
         }
     }
+
+    private record PendingRoomFile(Long roomId, String fileName, long fileSize) {}
 
     public static class UserDescriptor {
         private final String connectionId;

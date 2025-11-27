@@ -173,7 +173,7 @@ public class ClientRoomChatView extends BorderPane implements com.whatsapp.netwo
                 long fileSize = file.length();
                 String fileName = file.getName();
                 
-                // Enviar notificación de archivo como mensaje de sala
+                // Enviar metadatos al servidor
                 String roomIdEncoded = encodeBase64(String.valueOf(roomId));
                 String senderId = currentUser.getUsername();
                 aliasRegistry.registerAlias(senderId, currentUser.getUsername());
@@ -183,25 +183,11 @@ public class ClientRoomChatView extends BorderPane implements com.whatsapp.netwo
                 
                 String payload = roomIdEncoded + "|" + senderIdEncoded + "|" + fileNameEncoded + "|" + fileSizeEncoded + "|";
                 
-                // Enviar notificación al servidor (el servidor la reenviará a todos los miembros)
                 controlService.sendControlMessage(serverConnectionId, ControlService.CONTROL_ROOM_FILE, payload);
+                // Subir archivo al servidor (una sola vez); el servidor lo retransmitirá al resto.
+                networkFacade.sendFile(serverConnectionId, serverConnectionId, file.getAbsolutePath(), currentUser.getId());
                 
-                // Enviar el archivo físico a cada miembro a través del servidor
-                for (String memberId : members) {
-                    if (memberId == null || memberId.equals(currentUser.getUsername()) || memberId.startsWith("SERVER_")) {
-                        continue;
-                    }
-                    try {
-                        networkFacade.sendFile(serverConnectionId, memberId, file.getAbsolutePath(), currentUser.getId());
-                    } catch (Exception e) {
-                        // Continuar con otros miembros si uno falla
-                        System.err.println("Error enviando archivo a " + memberId + ": " + e.getMessage());
-                    }
-                }
-                
-                Platform.runLater(() -> {
-                    addFileMessage(currentUser.getUsername(), fileName, fileSize, null, true);
-                });
+                Platform.runLater(() -> addFileMessage(currentUser.getUsername(), fileName, fileSize, null, true));
             } catch (Exception e) {
                 showAlert("Error", "No se pudo enviar el archivo: " + e.getMessage(), Alert.AlertType.ERROR);
             }

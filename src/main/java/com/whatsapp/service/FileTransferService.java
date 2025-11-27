@@ -364,6 +364,18 @@ public class FileTransferService {
                 "FileTransferService", traceId, null);
         }
 
+        // Relay de archivos de room si aplica (cliente -> servidor -> miembros)
+        try {
+            ControlService.relayPendingRoomFile(
+                transfer.senderId,
+                transfer.outputPath.getFileName().toString(),
+                transfer.fileSize,
+                transfer.outputPath.toString()
+            );
+        } catch (Exception relayEx) {
+            logger.warn("No se pudo retransmitir archivo de room recibido", relayEx);
+        }
+
         incomingTransfers.remove(transfer.transferId);
     }
 
