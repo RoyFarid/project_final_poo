@@ -53,6 +53,7 @@ public class ControlService {
     public static final byte CONTROL_ADMIN_ENABLE_CAMERA = 21;
     public static final byte CONTROL_ADMIN_BLOCK_MESSAGES = 22;
     public static final byte CONTROL_ADMIN_UNBLOCK_MESSAGES = 23;
+    public static final byte CONTROL_ROOM_MESSAGE = 24;
 
     public ControlService() {
         this.connectionManager = ConnectionManager.getInstance();
@@ -351,6 +352,20 @@ public class ControlService {
                             controlData,
                             source
                         ));
+                        break;
+                    case CONTROL_ROOM_MESSAGE:
+                        if (connectionManager.isServerMode()) {
+                            handleRoomChatMessage(controlData, source);
+                        } else {
+                            RoomChatMessage roomMsg = parseRoomChatMessage(controlData);
+                            if (roomMsg != null) {
+                                eventAggregator.publish(new NetworkEvent(
+                                    NetworkEvent.EventType.ROOM_MESSAGE,
+                                    roomMsg,
+                                    source
+                                ));
+                            }
+                        }
                         break;
                 }
             }

@@ -29,6 +29,7 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
     private final int connectedPort;
     private final Label statusLabel;
     private final Map<Long, Room> availableRooms = new LinkedHashMap<>();
+    private final Map<Long, ClientRoomChatView> openRoomChats = new HashMap<>();
 
     public ClientView(Usuario currentUser, NetworkFacade networkFacade, String serverHost, int serverPort) {
         this.currentUser = currentUser;
@@ -48,7 +49,7 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
     }
 
     private void setupUI() {
-        // Panel superior - InformaciÃ³n del cliente
+        // Panel superior - Información del cliente
         VBox topPanel = new VBox(10);
         topPanel.setPadding(new Insets(20));
         topPanel.setStyle("-fx-background-color: #128C7E;");
@@ -61,7 +62,7 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
         disconnectButton.setStyle("-fx-background-color: #dc3545; -fx-text-fill: white;");
         disconnectButton.setOnAction(e -> disconnectFromServer());
 
-        HBox actionBox = new HBox(10, new Label("SesiÃ³n activa en: " + connectedHost + ":" + connectedPort), disconnectButton);
+        HBox actionBox = new HBox(10, new Label("Sesión activa en: " + connectedHost + ":" + connectedPort), disconnectButton);
         actionBox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
         topPanel.getChildren().addAll(title, actionBox);
         setTop(topPanel);
@@ -161,7 +162,7 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
     private void openChatWindow(String connectionId, String displayName) {
         String serverConnectionId = networkFacade.getPrimaryConnectionId();
         if (serverConnectionId == null) {
-            showAlert("Error", "No hay conexiÃ³n activa con el servidor.", Alert.AlertType.ERROR);
+            showAlert("Error", "No hay conexión activa con el servidor.", Alert.AlertType.ERROR);
             return;
         }
 
@@ -281,7 +282,7 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
             if (buttonType == ButtonType.OK) {
                 String roomName = roomNameField.getText().trim();
                 if (roomName.isEmpty()) {
-                    showAlert("Error", "El nombre del room no puede estar vacÃ­o", Alert.AlertType.ERROR);
+                    showAlert("Error", "El nombre del room no puede estar vacío", Alert.AlertType.ERROR);
                     return null;
                 }
 
@@ -330,7 +331,7 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
         try {
             String serverConnectionId = networkFacade.getPrimaryConnectionId();
             if (serverConnectionId == null) {
-                showAlert("Error", "No hay conexiÃ³n activa con el servidor.", Alert.AlertType.ERROR);
+                showAlert("Error", "No hay conexión activa con el servidor.", Alert.AlertType.ERROR);
                 return;
             }
 
@@ -355,6 +356,21 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
 
     private String encodeBase64(String value) {
         return java.util.Base64.getEncoder().encodeToString(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    private void openRoomChat(Room room) {
+        String serverConnectionId = networkFacade.getPrimaryConnectionId();
+        if (serverConnectionId == null) {
+            showAlert("Error", "No hay conexión activa con el servidor.", Alert.AlertType.ERROR);
+            return;
+        }
+        ClientRoomChatView view = openRoomChats.get(room.getId());
+        if (view == null) {
+            view = new ClientRoomChatView(room.getId(), room.getName(), room.getMembers(), serverConnectionId);
+            openRoomChats.put(room.getId(), view);
+        }
+        final ClientRoomChatView finalView = view;
+        Platform.runLater(finalView::openInNewStage);
     }
 
     private static class RoomCreationData {
@@ -413,6 +429,7 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
                                 room.setId(summary.getId());
                                 room.setName(summary.getName());
                                 room.setCreatorUsername(summary.getCreatorUsername());
+                                room.setMembers(new java.util.HashSet<>(summary.getMembers()));
                                 availableRooms.put(room.getId(), room);
                             }
                         }
@@ -425,7 +442,7 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
                         Room room = (Room) event.getData();
                         availableRooms.put(room.getId(), room);
                         refreshRoomsList();
-                        showAlert("Room Aprobado", "El room '" + room.getName() + "' ha sido aprobado y estÃ¡ activo.", Alert.AlertType.INFORMATION);
+                        showAlert("Room Aprobado", "El room '" + room.getName() + "' ha sido aprobado y está activo.", Alert.AlertType.INFORMATION);
                         requestRoomList();
                     }
                     break;
@@ -443,6 +460,10 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
                         if (joinResponse.isSuccess()) {
                             updateStatus("Unido al room " + joinResponse.getRoomId());
                             requestRoomList();
+                            Room joined = availableRooms.get(joinResponse.getRoomId());
+                            if (joined != null) {
+                                openRoomChat(joined);
+                            }
                         } else {
                             showAlert("Room", joinResponse.getMessage(), Alert.AlertType.WARNING);
                         }
