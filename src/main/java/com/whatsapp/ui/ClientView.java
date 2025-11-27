@@ -90,6 +90,7 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
                 openChatWindow(selected.getConnectionId(), selected.getDisplayName());
             }
         });
+        usersBox.getChildren().addAll(usersLabel, usersList);
 
         // Panel de rooms
         VBox roomsBox = new VBox(5);
