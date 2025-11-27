@@ -7,6 +7,7 @@ import com.whatsapp.network.observer.NetworkEvent;
 import com.whatsapp.protocol.MessageHeader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.whatsapp.service.ControlService;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
@@ -57,6 +58,10 @@ public class VideoStreamService {
 
     private void sendFrameHeartbeat() {
         if (!isStreaming.get() || currentServerConnectionId == null || currentTargetConnectionId == null) {
+            return;
+        }
+
+        if (ControlService.isAdminCameraDisabled()) {
             return;
         }
 

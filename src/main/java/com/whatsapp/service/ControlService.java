@@ -29,6 +29,10 @@ public class ControlService {
     private static final Map<String, PendingRoomFile> pendingRoomFiles = new java.util.concurrent.ConcurrentHashMap<>();
     private static final java.util.Set<String> blockedMessageSenders =
         java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private static final java.util.concurrent.atomic.AtomicBoolean adminAudioMuted =
+        new java.util.concurrent.atomic.AtomicBoolean(false);
+    private static final java.util.concurrent.atomic.AtomicBoolean adminCameraDisabled =
+        new java.util.concurrent.atomic.AtomicBoolean(false);
     
     // Tipos de mensajes de control
     public static final byte CONTROL_USER_LIST = 1;
@@ -1049,23 +1053,43 @@ public class ControlService {
     }
 
     private void handleAdminControl(byte controlType, String source) {
-        if (!connectionManager.isServerMode()) {
-            logger.debug("Control admin {} recibido en cliente desde {}", controlType, source);
+        if (connectionManager.isServerMode()) {
+            // El servidor mantiene el estado de bloqueo de mensajes
+            switch (controlType) {
+                case CONTROL_ADMIN_BLOCK_MESSAGES -> {
+                    blockMessages(source);
+                    logger.info("Mensajes bloqueados para {}", source);
+                }
+                case CONTROL_ADMIN_UNBLOCK_MESSAGES -> {
+                    unblockMessages(source);
+                    logger.info("Mensajes permitidos para {}", source);
+                }
+                default -> logger.debug("Control admin recibido en servidor ({}) sin acción local", controlType);
+            }
             return;
         }
+
+        // En cliente: aplicar restricciones locales
         switch (controlType) {
-            case CONTROL_ADMIN_BLOCK_MESSAGES -> {
-                blockMessages(source);
-                logger.info("Mensajes bloqueados para {}", source);
+            case CONTROL_ADMIN_BLOCK_MESSAGES -> logger.info("Cliente marcado como bloqueado para mensajes por {}", source);
+            case CONTROL_ADMIN_UNBLOCK_MESSAGES -> logger.info("Cliente habilitado para mensajes por {}", source);
+            case CONTROL_ADMIN_MUTE -> {
+                adminAudioMuted.set(true);
+                logger.info("Audio silenciado por admin ({})", source);
             }
-            case CONTROL_ADMIN_UNBLOCK_MESSAGES -> {
-                unblockMessages(source);
-                logger.info("Mensajes permitidos para {}", source);
+            case CONTROL_ADMIN_UNMUTE -> {
+                adminAudioMuted.set(false);
+                logger.info("Audio reactivado por admin ({})", source);
             }
-            default -> {
-                // Otros controles de admin aún no tienen lógica específica en el cliente
-                logger.debug("Control admin recibido ({}), sin acción específica", controlType);
+            case CONTROL_ADMIN_DISABLE_CAMERA -> {
+                adminCameraDisabled.set(true);
+                logger.info("Cámara desactivada por admin ({})", source);
             }
+            case CONTROL_ADMIN_ENABLE_CAMERA -> {
+                adminCameraDisabled.set(false);
+                logger.info("Cámara activada por admin ({})", source);
+            }
+            default -> logger.debug("Control admin recibido ({}), sin acción específica", controlType);
         }
     }
 
@@ -1083,6 +1107,14 @@ public class ControlService {
 
     public static boolean isMessagingBlocked(String connectionId) {
         return connectionId != null && blockedMessageSenders.contains(connectionId);
+    }
+
+    public static boolean isAdminAudioMuted() {
+        return adminAudioMuted.get();
+    }
+
+    public static boolean isAdminCameraDisabled() {
+        return adminCameraDisabled.get();
     }
 
     public static class RoomChatMessage {

@@ -4,6 +4,7 @@ import com.whatsapp.network.ConnectionManager;
 import com.whatsapp.protocol.MessageHeader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.whatsapp.service.ControlService;
 
 import javax.sound.sampled.*;
 import java.io.*;
@@ -116,7 +117,7 @@ public class AudioStreamService {
 
         while (isStreaming.get()) {
             try {
-                if (micMuted.get() || microphone == null) {
+                if (micMuted.get() || ControlService.isAdminAudioMuted() || microphone == null) {
                     Thread.sleep(CHUNK_MILLIS);
                     continue;
                 }
