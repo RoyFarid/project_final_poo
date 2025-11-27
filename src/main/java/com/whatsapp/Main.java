@@ -5,6 +5,7 @@ import com.whatsapp.ui.ClientView;
 import com.whatsapp.ui.LoginResult;
 import com.whatsapp.ui.LoginView;
 import com.whatsapp.ui.ServerView;
+
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.scene.Scene;
@@ -24,7 +25,7 @@ public class Main extends Application {
         try {
             LoginView loginView = new LoginView();
             Scene scene = new Scene(loginView.getRoot(), 400, 500);
-            primaryStage.setTitle("WhatsApp Clone - Login");
+            primaryStage.setTitle("RoomWave - Login");
             primaryStage.setScene(scene);
             primaryStage.setResizable(false);
             primaryStage.setOnCloseRequest(e -> {
@@ -43,14 +44,15 @@ public class Main extends Application {
                 }
             });
         } catch (Exception e) {
-            e.printStackTrace();
+            com.whatsapp.service.LogService.getInstance()
+                .logError("Error mostrando LoginView: " + e.getMessage(), "Main", null, null);
         }
     }
 
     private void showServerView() {
         ServerView serverView = new ServerView(currentUser);
         Scene scene = new Scene(serverView, 800, 600);
-        primaryStage.setTitle("WhatsApp Clone - Servidor - " + currentUser.getUsername());
+        primaryStage.setTitle("RoomWave - Servidor - " + currentUser.getUsername());
         primaryStage.setScene(scene);
         primaryStage.setResizable(true);
         primaryStage.show();
@@ -59,7 +61,7 @@ public class Main extends Application {
     private void showClientView(LoginResult result) {
         ClientView clientView = new ClientView(currentUser, result.getNetworkFacade(), result.getServerHost(), result.getServerPort());
         Scene scene = new Scene(clientView, 800, 600);
-        primaryStage.setTitle("WhatsApp Clone - Cliente - " + currentUser.getUsername());
+        primaryStage.setTitle("RoomWave - Cliente - " + currentUser.getUsername());
         primaryStage.setScene(scene);
         primaryStage.setResizable(true);
         primaryStage.show();

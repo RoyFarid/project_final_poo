@@ -44,7 +44,7 @@ public class LoginView {
         vbox.setAlignment(Pos.TOP_CENTER);
         vbox.setStyle("-fx-background-color: #f0f0f0;");
 
-        Text title = new Text("WhatsApp Clone");
+        Text title = new Text("RoomWave");
         title.setFont(Font.font(28));
         title.setStyle("-fx-fill: #25D366;");
 
