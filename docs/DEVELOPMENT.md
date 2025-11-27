@@ -1,18 +1,22 @@
-# Desarrollo
+# Guía de Desarrollo
 
 ## Para Desarrolladores
 
-Guía para contribuir o extender el proyecto.
-
----
+Guía para contribuir o extender el proyecto RoomWave.
 
 ## Estructura del Proyecto
 
-Ver [ARCHITECTURE.md](ARCHITECTURE.md) para estructura detallada de capas y componentes.
-
-Raíz: `src/main/java/com/whatsapp/`, `pom.xml`, `db.properties.example`
-
----
+```
+src/main/java/com/whatsapp/
+├── command/          # Patrón Command
+├── database/         # Gestión de MySQL
+├── model/            # Entidades del dominio
+├── network/          # Comunicación TCP/IP
+├── protocol/         # Protocolo de mensajería
+├── repository/       # Patrón Repository
+├── service/          # Lógica de negocio
+└── ui/               # Interfaz JavaFX
+```
 
 ## Setup del Entorno
 
@@ -34,34 +38,28 @@ cp db.properties.example db.properties
 nano db.properties  # Editar credenciales
 ```
 
-Ver [INSTALLATION.md](INSTALLATION.md) para setup completo de MySQL.
-
-### 4. Instalar Dependencias
+### Instalar Dependencias
 
 ```bash
 mvn clean install
 ```
 
-### 5. Ejecutar en Modo Desarrollo
+### Ejecutar en Modo Desarrollo
 
 ```bash
 mvn javafx:run
 ```
 
----
-
-##  Arquitectura del Código
-
-### Principios de Diseño
+## Principios de Diseño
 
 El proyecto sigue estos principios:
 
 1. **SOLID Principles**
-   - **S**ingle Responsibility: Cada clase tiene una responsabilidad única
-   - **O**pen/Closed: Abierto a extensión, cerrado a modificación
-   - **L**iskov Substitution: Subclases intercambiables
-   - **I**nterface Segregation: Interfaces específicas
-   - **D**ependency Inversion: Depender de abstracciones
+   - Single Responsibility: Cada clase tiene una responsabilidad única
+   - Open/Closed: Abierto a extensión, cerrado a modificación
+   - Liskov Substitution: Subclases intercambiables
+   - Interface Segregation: Interfaces específicas
+   - Dependency Inversion: Depender de abstracciones
 
 2. **DRY (Don't Repeat Yourself)**
    - Código reutilizable en servicios y utilidades
@@ -72,157 +70,35 @@ El proyecto sigue estos principios:
 4. **Separation of Concerns**
    - Capas bien definidas
 
-### Patrones de Diseño Implementados
+## Patrones de Diseño Implementados
 
-Ver [ARCHITECTURE.md](ARCHITECTURE.md) para detalles de arquitectura.
+Ver [ARCHITECTURE.md](ARCHITECTURE.md) para detalles completos.
 
-#### Ejemplos de Implementación
-```java
-public class ConnectionManager {
-    private static ConnectionManager instance;
-    
-    private ConnectionManager() {
-        // Constructor privado
-    }
-    
-    public static synchronized ConnectionManager getInstance() {
-        if (instance == null) {
-            instance = new ConnectionManager();
-        }
-        return instance;
-    }
-}
-```
+### Singleton
+- `ConnectionManager`, `EventAggregator`, `LogService`, `UserAliasRegistry`, `RoomService`, `DatabaseManager`
 
-**Singleton:**
-```java
-public class SocketFactory {
-    public static Socket createTcpSocket(String host, int port) throws IOException {
-        return new Socket(host, port);
-    }
-    
-    public static ServerSocket createTcpServerSocket(int port) throws IOException {
-        return new ServerSocket(port);
-    }
-}
-```
+### Factory Method
+- `SocketFactory`: Creación de sockets TCP
 
-**Factory:**
-```java
-public interface NetworkEventObserver {
-    void onNetworkEvent(NetworkEvent event);
-}
+### Observer
+- `EventAggregator` / `NetworkEventObserver`: Sistema pub/sub
 
-public class EventAggregator {
-    private List<NetworkEventObserver> observers = new CopyOnWriteArrayList<>();
-    
-    public void subscribe(NetworkEventObserver observer) {
-        observers.add(observer);
-    }
-    
-    public void publish(NetworkEvent event) {
-        observers.forEach(o -> o.onNetworkEvent(event));
-    }
-}
-```
+### Strategy
+- `RetryStrategy`: Estrategias de reintento intercambiables
 
-**Observer:**
-```java
-public interface Command {
-    void execute();
-    void undo();
-}
+### Command
+- `Command` / `CommandInvoker`: Encapsulación de acciones
 
-public class SendMessageCommand implements Command {
-    private NetworkFacade facade;
-    private String connectionId;
-    private String message;
-    
-    @Override
-    public void execute() {
-        facade.sendMessage(connectionId, message, userId, peerIp);
-    }
-    
-    @Override
-    public void undo() {
-        // Lógica de deshacer
-    }
-}
-```
+### Facade
+- `NetworkFacade`: Interfaz unificada para servicios de red
 
-**Command:**
-```java
-public interface RetryStrategy {
-    long getDelay(int attempt);
-    boolean shouldRetry(int attempt, Exception error);
-}
+### Repository
+- `IRepository<T>`: Abstracción de acceso a datos
 
-public class ExponentialBackoffStrategy implements RetryStrategy {
-    @Override
-    public long getDelay(int attempt) {
-        return (long) Math.pow(2, attempt) * 1000;
-    }
-    
-    @Override
-    public boolean shouldRetry(int attempt, Exception error) {
-        return attempt < 5;
-    }
-}
-```
+### Proxy
+- `RemoteAuthClient`: Proxy para autenticación remota
 
-**Strategy:**
-```java
-public class NetworkFacade {
-    private ConnectionManager connectionManager;
-    private ChatService chatService;
-    private FileTransferService fileService;
-    // ...
-    
-    public void sendMessage(String connId, String msg, Long userId, String ip) {
-        chatService.sendMessage(connId, msg, userId, ip);
-    }
-}
-```
-
-**Facade:**
-```java
-public interface IRepository<T> {
-    T save(T entity);
-    Optional<T> findById(Long id);
-    List<T> findAll();
-    void update(T entity);
-    void delete(Long id);
-}
-
-public class UsuarioRepository implements IRepository<Usuario> {
-    @Override
-    public Usuario save(Usuario usuario) {
-        // Lógica de persistencia
-    }
-}
-```
-
-**Repository:**
-```java
-public interface IRepository<T> {
-    T save(T entity);
-    Optional<T> findById(Long id);
-    List<T> findAll();
-    void update(T entity);
-    void delete(Long id);
-}
-
-public class UsuarioRepository implements IRepository<Usuario> {
-    @Override
-    public Usuario save(Usuario usuario) {
-        // Lógica de persistencia
-    }
-}
-```
-
----
-
-##  Guías de Desarrollo
+## Guías de Desarrollo
 
 ### Agregar Nuevo Tipo de Mensaje
 
@@ -268,7 +144,6 @@ public class NuevaEntidad {
     private Long id;
     private String campo1;
     private LocalDateTime fecha;
-    
     // Constructor, getters, setters
 }
 ```
@@ -339,7 +214,6 @@ invoker.executeCommand(cmd);
 ```java
 public class NuevaView extends VBox {
     public NuevaView() {
-        // Inicializar componentes
         initUI();
     }
     
@@ -359,25 +233,43 @@ private void showNuevaView() {
 }
 ```
 
----
+### Agregar Nuevo Tipo de Control Message
 
-##  Testing
+**Pasos:**
+
+1. **Agregar constante en ControlService**
+```java
+public static final byte CONTROL_NUEVO_TIPO = 26;
+```
+
+2. **Agregar handler en handleControlMessage**
+```java
+case CONTROL_NUEVO_TIPO:
+    handleNuevoTipo(controlData, source);
+    break;
+```
+
+3. **Implementar método handler**
+```java
+private void handleNuevoTipo(String data, String source) {
+    // Lógica de procesamiento
+}
+```
+
+## Testing
 
 ### Estructura de Tests
 
 ```
-src/
- test/
-     java/
-         com/
-             whatsapp/
-                 service/
-                    AuthServiceTest.java
-                    ChatServiceTest.java
-                 repository/
-                    UsuarioRepositoryTest.java
-                 network/
-                     ConnectionManagerTest.java
+src/test/java/com/whatsapp/
+├── service/
+│   ├── AuthServiceTest.java
+│   ├── ChatServiceTest.java
+│   └── RoomServiceTest.java
+├── repository/
+│   └── UsuarioRepositoryTest.java
+└── network/
+    └── ConnectionManagerTest.java
 ```
 
 ### Ejemplo de Test Unitario
@@ -407,16 +299,6 @@ public class AuthServiceTest {
         
         assertTrue(userOpt.isPresent());
     }
-    
-    @Test
-    public void testAutenticarPasswordIncorrecta() {
-        AuthService auth = new AuthService();
-        auth.registrar("testuser", "pass123", "test@email.com");
-        
-        Optional<Usuario> userOpt = auth.autenticar("testuser", "wrongpass");
-        
-        assertFalse(userOpt.isPresent());
-    }
 }
 ```
 
@@ -433,9 +315,7 @@ mvn test -Dtest=AuthServiceTest
 mvn test jacoco:report
 ```
 
----
-
-##  Estándares de Código
+## Estándares de Código
 
 ### Convenciones de Nombres
 
@@ -472,19 +352,19 @@ public class AuthService {
 ### Manejo de Excepciones
 
 ```java
-// Malo
-try {
-    // código
-} catch (Exception e) {
-    e.printStackTrace();
-}
-
-// Bueno
+// Correcto
 try {
     // código
 } catch (IOException e) {
     logger.error("Error de I/O al procesar archivo", e);
     throw new ApplicationException("No se pudo procesar el archivo", e);
+}
+
+// Incorrecto
+try {
+    // código
+} catch (Exception e) {
+    e.printStackTrace();
 }
 ```
 
@@ -506,15 +386,13 @@ public class MyClass {
 }
 ```
 
----
-
-##  Debugging
+## Debugging
 
 ### Logs de Aplicación
 
 Los logs se guardan en:
-- **Consola**: Salida estándar
-- **Base de datos**: Tabla `Log`
+- Consola: Salida estándar
+- Base de datos: Tabla `Log`
 
 ### Habilitar Debug Logging
 
@@ -533,10 +411,10 @@ En `logback.xml`:
 1. Establecer breakpoints (clic en margen izquierdo)
 2. Run > Debug 'Main'
 3. Usar controles:
-   - **F8**: Step Over
-   - **F7**: Step Into
-   - **Shift+F8**: Step Out
-   - **F9**: Resume
+   - F8: Step Over
+   - F7: Step Into
+   - Shift+F8: Step Out
+   - F9: Resume
 
 ### Debugging de Red
 
@@ -548,9 +426,7 @@ tcpdump -i any port 5000
 netstat -an | grep 5000
 ```
 
----
-
-##  Build y Deploy
+## Build y Deploy
 
 ### Compilar para Producción
 
@@ -563,7 +439,6 @@ Genera: `target/whatsapp-clone-1.0.0.jar`
 ### Crear Ejecutable Nativo
 
 ```bash
-# Con jpackage (Java 14+)
 jpackage --input target/ \
          --name WhatsAppClone \
          --main-jar whatsapp-clone-1.0.0.jar \
@@ -582,32 +457,29 @@ db.username=prod_user
 db.password=SECURE_PASSWORD_HERE
 ```
 
----
-
-##  Contribuir al Proyecto
+## Contribuir al Proyecto
 
 ### Workflow de Contribución
 
-1. **Fork del repositorio**
-2. **Crear rama feature**
+1. Fork del repositorio
+2. Crear rama feature:
    ```bash
    git checkout -b feature/nueva-funcionalidad
    ```
-3. **Hacer cambios y commits**
+3. Hacer cambios y commits:
    ```bash
    git add .
    git commit -m "feat: agregar nueva funcionalidad"
    ```
-4. **Push a tu fork**
+4. Push a tu fork:
    ```bash
    git push origin feature/nueva-funcionalidad
    ```
-5. **Crear Pull Request**
+5. Crear Pull Request
 
 ### Convención de Commits
 
-Seguir [Conventional Commits](https://www.conventionalcommits.org/):
-
+Seguir Conventional Commits:
 ```
 feat: agregar autenticación OAuth
 fix: corregir error en transferencia de archivos
@@ -627,13 +499,11 @@ Antes de merge, verificar:
 - [ ] Sin conflictos con main
 - [ ] Cambios revisados por al menos un desarrollador
 
----
-
-##  Recursos Adicionales
+## Recursos Adicionales
 
 ### Documentación Relacionada
 
-- [README.md](README.md) - Visión general
+- [README.md](../README.md) - Visión general
 - [ARCHITECTURE.md](ARCHITECTURE.md) - Arquitectura detallada
 - [API.md](API.md) - Documentación de API
 - [DATABASE.md](DATABASE.md) - Esquema de base de datos
@@ -650,26 +520,21 @@ Antes de merge, verificar:
 
 ### Herramientas Recomendadas
 
-- **IDE**: IntelliJ IDEA, Eclipse, VS Code
-- **DB Client**: MySQL Workbench, DBeaver
-- **Git GUI**: GitKraken, SourceTree
-- **Diff Tool**: Beyond Compare, Meld
-- **Profiler**: JProfiler, VisualVM
+- IDE: IntelliJ IDEA, Eclipse, VS Code
+- DB Client: MySQL Workbench, DBeaver
+- Git GUI: GitKraken, SourceTree
+- Diff Tool: Beyond Compare, Meld
+- Profiler: JProfiler, VisualVM
 
----
-
-##  Reportar Bugs
+## Reportar Bugs
 
 ### Información a Incluir
 
-1. **Descripción del bug**
-2. **Pasos para reproducir**
-3. **Comportamiento esperado vs actual**
-4. **Logs de error**
-5. **Entorno**:
-   - OS
-   - Java version
-   - MySQL version
+1. Descripción del bug
+2. Pasos para reproducir
+3. Comportamiento esperado vs actual
+4. Logs de error
+5. Entorno: OS, Java version, MySQL version
 
 ### Template de Issue
 
@@ -689,9 +554,7 @@ Antes de merge, verificar:
 [Qué sucede realmente]
 
 ## Logs
-```
 [Pegar logs relevantes]
-```
 
 ## Entorno
 - OS: Windows 10
@@ -699,35 +562,28 @@ Antes de merge, verificar:
 - MySQL: 8.0.31
 ```
 
----
-
-##  Mejores Prácticas
+## Mejores Prácticas
 
 ### Performance
 
-1. **Usar pools de hilos** para operaciones concurrentes
-2. **Cachear** resultados de queries frecuentes
-3. **Cerrar recursos** con try-with-resources
-4. **Lazy loading** para datos grandes
+1. Usar pools de hilos para operaciones concurrentes
+2. Cachear resultados de queries frecuentes
+3. Cerrar recursos con try-with-resources
+4. Lazy loading para datos grandes
 
 ### Seguridad
 
-1. **Nunca** hardcodear credenciales
-2. **Validar** toda entrada de usuario
-3. **Sanitizar** queries SQL (usar PreparedStatement)
-4. **Hashear** contraseñas con BCrypt
-5. **Logging** sin información sensible
+1. Nunca hardcodear credenciales
+2. Validar toda entrada de usuario
+3. Sanitizar queries SQL (usar PreparedStatement)
+4. Hashear contraseñas con BCrypt
+5. Logging sin información sensible
 
 ### Mantenibilidad
 
-1. **Código autoexplicativo** > Comentarios excesivos
-2. **Métodos pequeños** (< 50 líneas)
-3. **Clases cohesivas** (< 500 líneas)
-4. **Tests** para lógica crítica
-5. **Documentar** decisiones de diseño
+1. Código autoexplicativo > Comentarios excesivos
+2. Métodos pequeños (< 50 líneas)
+3. Clases cohesivas (< 500 líneas)
+4. Tests para lógica crítica
+5. Documentar decisiones de diseño
 
----
-
-¡Gracias por contribuir al proyecto WhatsApp Clone! 
-
-Para preguntas o dudas, contactar al equipo de desarrollo.

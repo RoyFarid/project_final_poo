@@ -2,58 +2,11 @@
 
 ## Visión General
 
-MySQL 8.0+ para almacenar usuarios, logs y transferencias.
+MySQL 8.0+ almacena usuarios, logs, transferencias y rooms. La base de datos se llama `whatsapp_clone` y usa InnoDB con codificación UTF-8 (utf8mb4).
 
-**Base de datos:** `whatsapp_clone`  
-**Motor:** InnoDB  
-**Codificación:** UTF-8 (utf8mb4)  
-**Timezone:** UTC
+## Esquema de Base de Datos
 
----
-
-## Esquema
-
-### Diagrama Entidad-Relación
-
-```
-
-    Usuario      
-
- Id (PK)         
- Username        
- PasswordHash               
- Salt                       
- Email                      
- FechaCreacion              
- UltimoLogin                
- Estado                     
-           
-                             
-                             
-                             
-         FK                   FK
-                             
-   
-      Log             Transferencia   
-   
- Id (PK)             Id (PK)          
- Nivel               Tipo             
- Mensaje             Nombre           
- Modulo              Tamano           
- Fecha               Checksum         
- TraceId             Estado           
- UserId (FK)         Inicio           
-    Fin              
-                       UserId (FK)      
-                       PeerIp           
-                      
-```
-
----
-
-## Tablas
-
-### Usuario
+### Tabla: Usuario
 
 Información de usuarios registrados.
 
@@ -70,45 +23,19 @@ CREATE TABLE Usuario (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
-#### Columnas
+**Columnas:**
+- `Id`: Identificador único (AUTO_INCREMENT)
+- `Username`: Nombre de usuario único
+- `PasswordHash`: Hash BCrypt de la contraseña
+- `Salt`: Salt usado para hashear
+- `Email`: Correo electrónico
+- `FechaCreacion`: Fecha de registro
+- `UltimoLogin`: Última autenticación exitosa
+- `Estado`: ACTIVO, INACTIVO, BLOQUEADO
 
-| Campo | Tipo | Null | Default | Descripción |
-|-------|------|------|---------|-------------|
-| **Id** | INT | NO | AUTO_INCREMENT | Identificador único del usuario |
-| **Username** | VARCHAR(50) | NO | - | Nombre de usuario único |
-| **PasswordHash** | VARCHAR(255) | NO | - | Hash BCrypt de la contraseña |
-| **Salt** | VARCHAR(255) | NO | - | Salt usado para hashear |
-| **Email** | VARCHAR(100) | NO | - | Correo electrónico |
-| **FechaCreacion** | DATETIME | NO | - | Fecha de registro |
-| **UltimoLogin** | DATETIME | YES | NULL | Última autenticación exitosa |
-| **Estado** | VARCHAR(20) | NO | 'ACTIVO' | Estado del usuario |
-
-#### Restricciones
-
-- **PRIMARY KEY**: `Id`
-- **UNIQUE**: `Username`
-
-#### Valores de Estado
-
-- `ACTIVO`: Usuario puede iniciar sesión
-- `INACTIVO`: Usuario temporalmente deshabilitado
-- `BLOQUEADO`: Usuario permanentemente bloqueado
-
-#### Índices
-
-```sql
--- Índice único en Username (automático por UNIQUE)
-CREATE UNIQUE INDEX idx_username ON Usuario(Username);
-```
-
-#### Ejemplo de Datos
-
-```sql
-INSERT INTO Usuario (Username, PasswordHash, Salt, Email, FechaCreacion, Estado) 
-VALUES ('juanito', '$2a$12$...', '$2a$12$...', 'juan@email.com', NOW(), 'ACTIVO');
-```
-
----
+**Índices:**
+- PRIMARY KEY: `Id`
+- UNIQUE: `Username`
 
 ### Tabla: Log
 
@@ -129,49 +56,23 @@ CREATE TABLE Log (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
-#### Columnas
+**Columnas:**
+- `Id`: Identificador único
+- `Nivel`: INFO, WARN, ERROR, DEBUG
+- `Mensaje`: Descripción del evento
+- `Modulo`: Componente que generó el log
+- `Fecha`: Timestamp del evento
+- `TraceId`: ID para rastrear flujos
+- `UserId`: Usuario relacionado (opcional)
 
-| Campo | Tipo | Null | Default | Descripción |
-|-------|------|------|---------|-------------|
-| **Id** | INT | NO | AUTO_INCREMENT | Identificador único del log |
-| **Nivel** | VARCHAR(10) | NO | - | Nivel de severidad |
-| **Mensaje** | TEXT | NO | - | Descripción del evento |
-| **Modulo** | VARCHAR(50) | NO | - | Componente que generó el log |
-| **Fecha** | DATETIME | NO | - | Timestamp del evento |
-| **TraceId** | VARCHAR(100) | YES | NULL | ID para rastrear flujos |
-| **UserId** | INT | YES | NULL | Usuario relacionado (opcional) |
-
-#### Restricciones
-
-- **PRIMARY KEY**: `Id`
-- **FOREIGN KEY**: `UserId` → `Usuario(Id)` ON DELETE SET NULL
-
-#### Niveles de Log
-
-- `INFO`: Información general
-- `WARN`: Advertencias
-- `ERROR`: Errores
-- `DEBUG`: Información de depuración
-
-#### Índices
-
-```sql
-CREATE INDEX idx_fecha ON Log(Fecha);
-CREATE INDEX idx_trace ON Log(TraceId);
-```
-
-#### Ejemplo de Datos
-
-```sql
-INSERT INTO Log (Nivel, Mensaje, Modulo, Fecha, TraceId, UserId)
-VALUES ('INFO', 'Usuario autenticado', 'AuthService', NOW(), 'TRC-123', 1);
-```
-
----
+**Índices:**
+- PRIMARY KEY: `Id`
+- FOREIGN KEY: `UserId` → `Usuario(Id)` ON DELETE SET NULL
+- INDEX: `idx_fecha`, `idx_trace`
 
 ### Tabla: Transferencia
 
-Registra todas las transferencias de archivos y mensajes del sistema.
+Registra todas las transferencias de archivos y mensajes.
 
 ```sql
 CREATE TABLE Transferencia (
@@ -191,63 +92,86 @@ CREATE TABLE Transferencia (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
-#### Columnas
+**Columnas:**
+- `Id`: Identificador único
+- `Tipo`: MENSAJE, ARCHIVO, VIDEO, AUDIO
+- `Nombre`: Nombre del archivo/mensaje
+- `Tamano`: Tamaño en bytes
+- `Checksum`: Hash SHA-256 para integridad
+- `Estado`: PENDIENTE, EN_PROGRESO, COMPLETADA, FALLIDA, CANCELADA
+- `Inicio`: Fecha/hora de inicio
+- `Fin`: Fecha/hora de finalización
+- `UserId`: Usuario que realizó la transferencia
+- `PeerIp`: IP del destinatario/remitente
 
-| Campo | Tipo | Null | Default | Descripción |
-|-------|------|------|---------|-------------|
-| **Id** | INT | NO | AUTO_INCREMENT | Identificador único |
-| **Tipo** | VARCHAR(20) | NO | - | Tipo de transferencia |
-| **Nombre** | VARCHAR(255) | NO | - | Nombre del archivo/mensaje |
-| **Tamano** | BIGINT | NO | - | Tamaño en bytes |
-| **Checksum** | VARCHAR(64) | NO | - | Hash SHA-256 para integridad |
-| **Estado** | VARCHAR(20) | NO | - | Estado de la transferencia |
-| **Inicio** | DATETIME | NO | - | Fecha/hora de inicio |
-| **Fin** | DATETIME | YES | NULL | Fecha/hora de finalización |
-| **UserId** | INT | NO | - | Usuario que realizó la transferencia |
-| **PeerIp** | VARCHAR(45) | NO | - | IP del destinatario/remitente |
+**Índices:**
+- PRIMARY KEY: `Id`
+- FOREIGN KEY: `UserId` → `Usuario(Id)` ON DELETE CASCADE
+- INDEX: `idx_estado`, `idx_user`
 
-#### Restricciones
+### Tabla: Room
 
-- **PRIMARY KEY**: `Id`
-- **FOREIGN KEY**: `UserId` → `Usuario(Id)` ON DELETE CASCADE
-
-#### Tipos de Transferencia
-
-- `MENSAJE`: Mensaje de chat
-- `ARCHIVO`: Archivo transferido
-- `VIDEO`: Stream de video
-- `AUDIO`: Stream de audio
-
-#### Estados de Transferencia
-
-- `PENDIENTE`: Esperando inicio
-- `EN_PROGRESO`: Transferencia activa
-- `COMPLETADA`: Transferencia exitosa
-- `FALLIDA`: Error en transferencia
-- `CANCELADA`: Cancelada por usuario
-
-#### Índices
+Información de salas de chat grupales.
 
 ```sql
-CREATE INDEX idx_estado ON Transferencia(Estado);
-CREATE INDEX idx_user ON Transferencia(UserId);
+CREATE TABLE Room (
+    Id INT AUTO_INCREMENT PRIMARY KEY,
+    Name VARCHAR(100) NOT NULL,
+    CreatorConnectionId VARCHAR(255) NOT NULL,
+    CreatorUsername VARCHAR(50) NOT NULL,
+    Estado VARCHAR(20) NOT NULL DEFAULT 'PENDIENTE',
+    FechaCreacion DATETIME NOT NULL,
+    ServerUsername VARCHAR(50) NOT NULL,
+    RequestMessage TEXT,
+    IncludeServer BOOLEAN DEFAULT FALSE,
+    INDEX idx_server (ServerUsername),
+    INDEX idx_estado (Estado)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
-#### Ejemplo de Datos
+**Columnas:**
+- `Id`: Identificador único
+- `Name`: Nombre del room
+- `CreatorConnectionId`: ConnectionId del creador
+- `CreatorUsername`: Username del creador
+- `Estado`: PENDIENTE, ACTIVO, RECHAZADO, CERRADO
+- `FechaCreacion`: Fecha de creación
+- `ServerUsername`: Username del servidor que gestiona el room
+- `RequestMessage`: Mensaje opcional de solicitud
+- `IncludeServer`: Si el servidor participa en el room
+
+**Índices:**
+- PRIMARY KEY: `Id`
+- INDEX: `idx_server`, `idx_estado`
+
+### Tabla: RoomMember
+
+Relación muchos-a-muchos entre rooms y miembros.
 
 ```sql
-INSERT INTO Transferencia (Tipo, Nombre, Tamano, Checksum, Estado, Inicio, UserId, PeerIp)
-VALUES ('ARCHIVO', 'documento.pdf', 2048576, 'a3f5b2c1...', 'COMPLETADA', NOW(), 1, '192.168.1.100');
+CREATE TABLE RoomMember (
+    RoomId INT NOT NULL,
+    ConnectionId VARCHAR(255) NOT NULL,
+    PRIMARY KEY (RoomId, ConnectionId),
+    FOREIGN KEY (RoomId) REFERENCES Room(Id) ON DELETE CASCADE,
+    INDEX idx_connection (ConnectionId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
----
+**Columnas:**
+- `RoomId`: ID del room
+- `ConnectionId`: ConnectionId del miembro
 
-##  Configuración
+**Índices:**
+- PRIMARY KEY: `(RoomId, ConnectionId)`
+- FOREIGN KEY: `RoomId` → `Room(Id)` ON DELETE CASCADE
+- INDEX: `idx_connection`
+
+## Configuración
 
 ### Archivo: db.properties
 
 ```properties
-# Configuración de conexión MySQL
 db.host=localhost
 db.port=3306
 db.database=whatsapp_clone
@@ -255,220 +179,125 @@ db.username=whatsapp_user
 db.password=tu_password_seguro
 ```
 
+### Script SQL de Esquema
+
+El archivo `schema.sql` en la raíz del proyecto contiene el esquema completo de la base de datos. Puede ejecutarse manualmente si es necesario:
+
+```bash
+mysql -u whatsapp_user -p whatsapp_clone < schema.sql
+```
+
+**Nota:** La aplicación crea las tablas automáticamente al iniciar mediante `DatabaseManager`, por lo que normalmente no es necesario ejecutar este script manualmente.
+
 ### Crear Base de Datos y Usuario
 
 ```sql
--- Crear base de datos
 CREATE DATABASE IF NOT EXISTS whatsapp_clone
     DEFAULT CHARACTER SET utf8mb4
     DEFAULT COLLATE utf8mb4_unicode_ci;
 
--- Crear usuario
 CREATE USER 'whatsapp_user'@'localhost' IDENTIFIED BY 'tu_password_seguro';
 
--- Otorgar permisos
 GRANT ALL PRIVILEGES ON whatsapp_clone.* TO 'whatsapp_user'@'localhost';
 FLUSH PRIVILEGES;
 ```
 
----
-
-##  Consultas Comunes
+## Consultas Comunes
 
 ### Usuarios
 
-#### Buscar usuario por username
 ```sql
-SELECT * FROM Usuario 
-WHERE Username = 'juanito';
-```
+-- Buscar usuario por username
+SELECT * FROM Usuario WHERE Username = 'juanito';
 
-#### Listar usuarios activos
-```sql
+-- Listar usuarios activos
 SELECT Id, Username, Email, FechaCreacion, UltimoLogin
 FROM Usuario
 WHERE Estado = 'ACTIVO'
 ORDER BY FechaCreacion DESC;
-```
 
-#### Actualizar último login
-```sql
-UPDATE Usuario
-SET UltimoLogin = NOW()
-WHERE Id = 1;
-```
-
-#### Usuarios registrados por mes
-```sql
-SELECT 
-    DATE_FORMAT(FechaCreacion, '%Y-%m') AS Mes,
-    COUNT(*) AS TotalUsuarios
-FROM Usuario
-GROUP BY DATE_FORMAT(FechaCreacion, '%Y-%m')
-ORDER BY Mes DESC;
+-- Actualizar último login
+UPDATE Usuario SET UltimoLogin = NOW() WHERE Id = 1;
 ```
 
 ### Logs
 
-#### Logs de un usuario específico
 ```sql
+-- Logs de un usuario específico
 SELECT * FROM Log
 WHERE UserId = 1
 ORDER BY Fecha DESC
 LIMIT 100;
-```
 
-#### Logs por nivel de severidad
-```sql
-SELECT Nivel, COUNT(*) AS Total
-FROM Log
-GROUP BY Nivel;
-```
+-- Logs por nivel de severidad
+SELECT Nivel, COUNT(*) AS Total FROM Log GROUP BY Nivel;
 
-#### Logs de las últimas 24 horas
-```sql
+-- Logs de las últimas 24 horas
 SELECT * FROM Log
 WHERE Fecha >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
 ORDER BY Fecha DESC;
-```
 
-#### Seguir un flujo por TraceId
-```sql
+-- Seguir un flujo por TraceId
 SELECT * FROM Log
 WHERE TraceId = 'TRC-1234567890'
 ORDER BY Fecha ASC;
 ```
 
-#### Logs de errores
-```sql
-SELECT Fecha, Modulo, Mensaje, UserId
-FROM Log
-WHERE Nivel = 'ERROR'
-ORDER BY Fecha DESC
-LIMIT 50;
-```
-
 ### Transferencias
 
-#### Transferencias de un usuario
 ```sql
+-- Transferencias de un usuario
 SELECT * FROM Transferencia
 WHERE UserId = 1
 ORDER BY Inicio DESC;
-```
 
-#### Transferencias completadas
-```sql
-SELECT 
-    Nombre,
-    Tamano / 1024 / 1024 AS TamanoMB,
-    Inicio,
-    Fin,
-    TIMESTAMPDIFF(SECOND, Inicio, Fin) AS DuracionSegundos
+-- Transferencias completadas
+SELECT Nombre, Tamano / 1024 / 1024 AS TamanoMB, Inicio, Fin,
+       TIMESTAMPDIFF(SECOND, Inicio, Fin) AS DuracionSegundos
 FROM Transferencia
 WHERE Estado = 'COMPLETADA'
 ORDER BY Inicio DESC;
-```
 
-#### Total de datos transferidos por usuario
-```sql
-SELECT 
-    u.Username,
-    COUNT(t.Id) AS TotalTransferencias,
-    SUM(t.Tamano) / 1024 / 1024 AS TotalMB
+-- Total de datos transferidos por usuario
+SELECT u.Username, COUNT(t.Id) AS TotalTransferencias,
+       SUM(t.Tamano) / 1024 / 1024 AS TotalMB
 FROM Transferencia t
 JOIN Usuario u ON t.UserId = u.Id
 GROUP BY u.Username
 ORDER BY TotalMB DESC;
 ```
 
-#### Transferencias fallidas
-```sql
-SELECT 
-    t.Nombre,
-    t.Tipo,
-    t.Inicio,
-    u.Username,
-    t.PeerIp
-FROM Transferencia t
-JOIN Usuario u ON t.UserId = u.Id
-WHERE t.Estado = 'FALLIDA'
-ORDER BY t.Inicio DESC;
-```
-
-#### Estadísticas por tipo de transferencia
-```sql
-SELECT 
-    Tipo,
-    COUNT(*) AS Total,
-    AVG(Tamano / 1024) AS PromedioKB,
-    MAX(Tamano / 1024 / 1024) AS MaximoMB
-FROM Transferencia
-WHERE Estado = 'COMPLETADA'
-GROUP BY Tipo;
-```
-
----
-
-##  Estadísticas y Reportes
-
-### Dashboard de Actividad
+### Rooms
 
 ```sql
-SELECT 
-    (SELECT COUNT(*) FROM Usuario WHERE Estado = 'ACTIVO') AS UsuariosActivos,
-    (SELECT COUNT(*) FROM Log WHERE Fecha >= DATE_SUB(NOW(), INTERVAL 1 DAY)) AS LogsUltimas24h,
-    (SELECT COUNT(*) FROM Transferencia WHERE Estado = 'COMPLETADA') AS TransferenciasCompletadas,
-    (SELECT SUM(Tamano) / 1024 / 1024 / 1024 FROM Transferencia WHERE Estado = 'COMPLETADA') AS TotalGB;
+-- Rooms activos de un servidor
+SELECT * FROM Room
+WHERE ServerUsername = 'servidor1' AND Estado = 'ACTIVO'
+ORDER BY FechaCreacion DESC;
+
+-- Miembros de un room
+SELECT rm.ConnectionId, r.Name
+FROM RoomMember rm
+JOIN Room r ON rm.RoomId = r.Id
+WHERE rm.RoomId = 1;
+
+-- Rooms con número de miembros
+SELECT r.Id, r.Name, r.Estado, COUNT(rm.ConnectionId) AS NumMiembros
+FROM Room r
+LEFT JOIN RoomMember rm ON r.Id = rm.RoomId
+WHERE r.ServerUsername = 'servidor1'
+GROUP BY r.Id, r.Name, r.Estado;
 ```
 
-### Usuarios Más Activos
+## Mantenimiento
 
-```sql
-SELECT 
-    u.Username,
-    COUNT(t.Id) AS TotalTransferencias,
-    COUNT(l.Id) AS TotalLogs,
-    MAX(u.UltimoLogin) AS UltimoAcceso
-FROM Usuario u
-LEFT JOIN Transferencia t ON u.Id = t.UserId
-LEFT JOIN Log l ON u.Id = l.UserId
-WHERE u.Estado = 'ACTIVO'
-GROUP BY u.Id
-ORDER BY TotalTransferencias DESC
-LIMIT 10;
-```
-
-### Actividad por Hora del Día
-
-```sql
-SELECT 
-    HOUR(Fecha) AS Hora,
-    COUNT(*) AS TotalEventos
-FROM Log
-WHERE Fecha >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-GROUP BY HOUR(Fecha)
-ORDER BY Hora;
-```
-
----
-
-##  Mantenimiento
-
-### Backup de Base de Datos
+### Backup
 
 ```bash
-# Backup completo
 mysqldump -u whatsapp_user -p whatsapp_clone > backup_whatsapp_$(date +%Y%m%d).sql
-
-# Backup solo estructura
-mysqldump -u whatsapp_user -p --no-data whatsapp_clone > schema_whatsapp.sql
-
-# Backup solo datos
-mysqldump -u whatsapp_user -p --no-create-info whatsapp_clone > data_whatsapp.sql
 ```
 
-### Restaurar Base de Datos
+### Restaurar
 
 ```bash
 mysql -u whatsapp_user -p whatsapp_clone < backup_whatsapp_20251125.sql
@@ -477,9 +306,7 @@ mysql -u whatsapp_user -p whatsapp_clone < backup_whatsapp_20251125.sql
 ### Limpiar Logs Antiguos
 
 ```sql
--- Eliminar logs mayores a 90 días
-DELETE FROM Log 
-WHERE Fecha < DATE_SUB(NOW(), INTERVAL 90 DAY);
+DELETE FROM Log WHERE Fecha < DATE_SUB(NOW(), INTERVAL 90 DAY);
 ```
 
 ### Optimizar Tablas
@@ -488,184 +315,16 @@ WHERE Fecha < DATE_SUB(NOW(), INTERVAL 90 DAY);
 OPTIMIZE TABLE Usuario;
 OPTIMIZE TABLE Log;
 OPTIMIZE TABLE Transferencia;
+OPTIMIZE TABLE Room;
+OPTIMIZE TABLE RoomMember;
 ```
 
-### Analizar Rendimiento
-
-```sql
--- Ver tamaño de tablas
-SELECT 
-    table_name AS Tabla,
-    ROUND((data_length + index_length) / 1024 / 1024, 2) AS TamanoMB
-FROM information_schema.TABLES
-WHERE table_schema = 'whatsapp_clone'
-ORDER BY (data_length + index_length) DESC;
-
--- Ver índices de una tabla
-SHOW INDEX FROM Usuario;
-```
-
----
-
-##  Seguridad
+## Seguridad
 
 ### Buenas Prácticas
 
-1. **Contraseñas**:
-   - Nunca almacenar contraseñas en texto plano
-   - Usar BCrypt con al menos 12 rounds
-   - Almacenar salt junto con hash
+1. **Contraseñas**: Nunca almacenar en texto plano. Usar BCrypt con al menos 12 rounds.
+2. **Permisos**: Usuario de aplicación con permisos limitados. No usar root en producción.
+3. **Conexiones**: Usar SSL/TLS para conexiones remotas.
+4. **Auditoría**: Registrar todos los accesos y monitorear intentos fallidos de login.
 
-2. **Permisos**:
-   - Usuario de aplicación con permisos limitados
-   - No usar root en producción
-   - Principio de mínimo privilegio
-
-3. **Conexiones**:
-   - Usar SSL/TLS para conexiones remotas
-   - Limitar conexiones por IP
-   - Timeout de conexiones inactivas
-
-4. **Auditoría**:
-   - Registrar todos los accesos
-   - Monitorear intentos fallidos de login
-   - Revisar logs regularmente
-
-### Encriptación de Datos Sensibles
-
-```sql
--- Ejemplo de uso de encriptación (MySQL 8.0+)
--- Para columnas que requieran encriptación adicional
-
--- Encriptar
-INSERT INTO Usuario (Username, Email, ...) 
-VALUES ('user', AES_ENCRYPT('email@test.com', 'encryption_key'), ...);
-
--- Desencriptar
-SELECT Username, AES_DECRYPT(Email, 'encryption_key') AS Email
-FROM Usuario;
-```
-
----
-
-##  Modelo de Datos en Java
-
-### Clase Usuario
-
-```java
-public class Usuario {
-    private Long id;
-    private String username;
-    private String passwordHash;
-    private String salt;
-    private String email;
-    private LocalDateTime fechaCreacion;
-    private LocalDateTime ultimoLogin;
-    private EstadoUsuario estado;
-    
-    public enum EstadoUsuario {
-        ACTIVO, INACTIVO, BLOQUEADO
-    }
-}
-```
-
-### Clase Log
-
-```java
-public class Log {
-    private Long id;
-    private String nivel;
-    private String mensaje;
-    private String modulo;
-    private LocalDateTime fecha;
-    private String traceId;
-    private Long userId;
-}
-```
-
-### Clase Transferencia
-
-```java
-public class Transferencia {
-    private Long id;
-    private TipoTransferencia tipo;
-    private String nombre;
-    private Long tamano;
-    private String checksum;
-    private EstadoTransferencia estado;
-    private LocalDateTime inicio;
-    private LocalDateTime fin;
-    private Long userId;
-    private String peerIp;
-    
-    public enum TipoTransferencia {
-        MENSAJE, ARCHIVO, VIDEO, AUDIO
-    }
-    
-    public enum EstadoTransferencia {
-        PENDIENTE, EN_PROGRESO, COMPLETADA, FALLIDA, CANCELADA
-    }
-}
-```
-
----
-
-##  Migraciones
-
-### Script de Inicialización Completo
-
-```sql
--- Crear base de datos
-CREATE DATABASE IF NOT EXISTS whatsapp_clone
-    DEFAULT CHARACTER SET utf8mb4
-    DEFAULT COLLATE utf8mb4_unicode_ci;
-
-USE whatsapp_clone;
-
--- Tabla Usuario
-CREATE TABLE IF NOT EXISTS Usuario (
-    Id INT AUTO_INCREMENT PRIMARY KEY,
-    Username VARCHAR(50) UNIQUE NOT NULL,
-    PasswordHash VARCHAR(255) NOT NULL,
-    Salt VARCHAR(255) NOT NULL,
-    Email VARCHAR(100) NOT NULL,
-    FechaCreacion DATETIME NOT NULL,
-    UltimoLogin DATETIME,
-    Estado VARCHAR(20) NOT NULL DEFAULT 'ACTIVO'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- Tabla Log
-CREATE TABLE IF NOT EXISTS Log (
-    Id INT AUTO_INCREMENT PRIMARY KEY,
-    Nivel VARCHAR(10) NOT NULL,
-    Mensaje TEXT NOT NULL,
-    Modulo VARCHAR(50) NOT NULL,
-    Fecha DATETIME NOT NULL,
-    TraceId VARCHAR(100),
-    UserId INT,
-    FOREIGN KEY (UserId) REFERENCES Usuario(Id) ON DELETE SET NULL,
-    INDEX idx_fecha (Fecha),
-    INDEX idx_trace (TraceId)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- Tabla Transferencia
-CREATE TABLE IF NOT EXISTS Transferencia (
-    Id INT AUTO_INCREMENT PRIMARY KEY,
-    Tipo VARCHAR(20) NOT NULL,
-    Nombre VARCHAR(255) NOT NULL,
-    Tamano BIGINT NOT NULL,
-    Checksum VARCHAR(64) NOT NULL,
-    Estado VARCHAR(20) NOT NULL,
-    Inicio DATETIME NOT NULL,
-    Fin DATETIME,
-    UserId INT NOT NULL,
-    PeerIp VARCHAR(45) NOT NULL,
-    FOREIGN KEY (UserId) REFERENCES Usuario(Id) ON DELETE CASCADE,
-    INDEX idx_estado (Estado),
-    INDEX idx_user (UserId)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-```
-
----
-
-Esta documentación proporciona una guía completa del esquema de base de datos del proyecto. Para gestión programática, ver `DatabaseManager.java` y las clases en `com.whatsapp.repository`.

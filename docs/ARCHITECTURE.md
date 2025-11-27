@@ -2,325 +2,366 @@
 
 ## Visión General
 
-El proyecto usa una arquitectura en capas con separación de responsabilidades e implementación de patrones de diseño.
+RoomWave implementa una arquitectura en capas con separación clara de responsabilidades. El sistema sigue el patrón cliente-servidor donde un servidor central gestiona múltiples clientes conectados mediante TCP/IP.
 
-## Capas de la Arquitectura
+## Arquitectura en Capas
 
-### 1. Capa de Presentación (UI)
-`com.whatsapp.ui`
+### Capa de Presentación (UI)
 
-Maneja la interfaz gráfica y eventos del usuario.
+**Paquete**: `com.whatsapp.ui`
 
-**Componentes**:
-- `LoginView`: Pantalla de autenticación
-- `ServerView`: Interfaz del modo servidor
-- `ClientView`: Interfaz del modo cliente
-- `ChatView`: Vista de chat individual
+Componentes principales:
+- `LoginView`: Autenticación y registro de usuarios
+- `ServerView`: Interfaz del servidor con gestión de clientes y rooms
+- `ClientView`: Interfaz del cliente para conectarse al servidor
+- `ChatView`: Vista de chat individual entre usuarios
+- `RoomChatView`: Vista de chat grupal en rooms
+- `ClientRoomChatView`: Vista de rooms desde el cliente
 
-**Responsabilidades**:
-- Capturar eventos del usuario
-- Renderizar datos
+Responsabilidades:
+- Captura de eventos del usuario
+- Renderizado de datos en la interfaz
 - Validación básica de entrada
-- Delegación a la capa de servicio
+- Delegación de operaciones a la capa de servicio
 
-### 2. Capa de Servicio
-`com.whatsapp.service`
+### Capa de Servicio
 
-Lógica de negocio de la aplicación.
-
-**Componentes principales**:
+**Paquete**: `com.whatsapp.service`
 
 #### NetworkFacade
-**Patrón**: Facade
-```java
-public class NetworkFacade {
-    // Orquesta todos los servicios de red
-    - ConnectionManager
-    - ChatService
-    - FileTransferService
-    - VideoStreamService
-    - AudioStreamService
-}
-```
-Simplifica operaciones de red complejas.
+
+Patrón: Facade
+
+Orquesta todos los servicios de red proporcionando una interfaz unificada:
+- `ConnectionManager`: Gestión de conexiones
+- `ChatService`: Mensajería de texto
+- `FileTransferService`: Transferencia de archivos
+- `VideoStreamService`: Streaming de video
+- `AudioStreamService`: Streaming de audio
+- `ControlService`: Mensajes de control del sistema
+- `RoomService`: Gestión de salas de chat
 
 #### AuthService
-```java
-public class AuthService {
-    + registrar(username, password, email): Usuario
-    + autenticar(username, password): Optional<Usuario>
-    + cambiarPassword(userId, oldPassword, newPassword): boolean
-}
-```
-Autenticación y autorización con BCrypt.
+
+Gestiona autenticación y autorización:
+- Registro de nuevos usuarios con validación
+- Autenticación con BCrypt (12 rounds)
+- Cambio de contraseñas
+- Gestión de estados de usuario (ACTIVO, INACTIVO, BLOQUEADO)
 
 #### ChatService
-Maneja mensajes de texto entre usuarios.
+
+Maneja mensajería de texto:
+- Envío y recepción de mensajes
+- Serialización mediante MessageHeader
+- Verificación de checksums
+- Persistencia en base de datos
 
 #### FileTransferService
-Transferencia de archivos con checksums.
 
-#### VideoStreamService & AudioStreamService
-Streaming de video y audio.
+Transferencia de archivos con integridad:
+- División de archivos en chunks de 64KB
+- Cálculo de checksums SHA-256
+- Reintentos con estrategias configurables
+- Verificación de integridad al recibir
+
+#### VideoStreamService y AudioStreamService
+
+Streaming multimedia en tiempo real:
+- Captura desde webcam (30 FPS)
+- Captura de audio desde micrófono (44.1 KHz)
+- Compresión de frames (JPEG para video)
+- Transmisión mediante mensajes VIDEO y AUDIO
+
+#### RoomService
+
+Patrón: Singleton
+
+Gestión de salas de chat grupales:
+- Creación de solicitudes de rooms (pendientes de aprobación)
+- Aprobación/rechazo de rooms por el servidor
+- Unión y salida de usuarios a rooms
+- Envío de mensajes y archivos a rooms
+- Cierre de rooms
+
+#### ControlService
+
+Manejo de mensajes de control del sistema:
+- Lista de usuarios conectados
+- Notificaciones de conexión/desconexión
+- Autenticación remota (AUTH_REQUEST/RESPONSE)
+- Registro remoto (REGISTER_REQUEST/RESPONSE)
+- Gestión de rooms (CREATE, APPROVE, REJECT, JOIN, LEAVE)
+- Control administrativo (MUTE, BLOCK_MESSAGES, DISABLE_CAMERA)
+
+#### RemoteAuthClient
+
+Patrón: Proxy
+
+Cliente auxiliar para autenticación remota:
+- Encapsula solicitudes de autenticación al servidor
+- Maneja respuestas asíncronas mediante CompletableFuture
+- Timeout de 10 segundos para operaciones
+
+#### UserAliasRegistry
+
+Patrón: Singleton
+
+Registro centralizado de alias de usuarios:
+- Mapea connectionIds a nombres de usuario legibles
+- Sincronización entre servidor y clientes
+- Actualización en tiempo real
+
+#### ServerRuntime
+
+Mantiene el estado del proceso:
+- Identifica si el proceso actual es servidor o cliente
+- Controla acceso a base de datos (solo servidor accede directamente)
 
 #### LogService
-**Patrón**: Singleton
-Logging de operaciones y errores.
 
-### 3. Capa de Red (Network)
-**Ubicación**: `com.whatsapp.network`
+Patrón: Singleton
 
-Gestiona todas las comunicaciones de red.
+Sistema de logging centralizado:
+- Logging a consola y base de datos
+- Generación de TraceIds para seguimiento
+- Niveles: INFO, WARN, ERROR, DEBUG
+
+### Capa de Red (Network)
+
+**Paquete**: `com.whatsapp.network`
 
 #### ConnectionManager
-**Patrón**: Singleton
 
-```java
-public class ConnectionManager {
-    - Map<String, Socket> connections
-    - Map<String, DataOutputStream> outputStreams
-    - ExecutorService executorService
-    
-    + startServer(port): void
-    + connectToServer(host, port): Socket
-    + send(connectionId, data): void
-    + broadcast(data): void
-}
-```
+Patrón: Singleton
 
-**Características**:
-- Gestión de múltiples conexiones concurrentes
-- Pool de hilos para manejo asíncrono
-- Estados de conexión bien definidos
+Gestión centralizada de conexiones TCP/IP:
+- Pool de conexiones concurrentes
+- Gestión de estados (DESCONECTADO, CONECTANDO, ACTIVO, ERROR)
+- Envío y recepción de datos
+- Broadcast a múltiples clientes
+- Thread-safe mediante ConcurrentHashMap
 
-#### Factory Pattern
-**Ubicación**: `com.whatsapp.network.factory`
+#### SocketFactory
 
-```java
-public class SocketFactory {
-    + createTcpSocket(host, port): Socket
-    + createTcpServerSocket(port): ServerSocket
-}
-```
+Patrón: Factory Method
 
-**Beneficio**: Centraliza la creación de sockets y permite fácil extensión.
+Creación de sockets TCP:
+- `createTcpSocket`: Socket cliente
+- `createTcpServerSocket`: ServerSocket para servidor
+- Centraliza configuración de sockets
 
-#### Observer Pattern
-**Ubicación**: `com.whatsapp.network.observer`
+#### EventAggregator
 
-```java
-public class EventAggregator {
-    - List<NetworkEventObserver> observers
-    
-    + subscribe(observer): void
-    + unsubscribe(observer): void
-    + publish(event): void
-}
-```
+Patrón: Observer (Singleton)
 
-**Eventos soportados**:
-- `CONNECTED`: Nueva conexión establecida
-- `DISCONNECTED`: Conexión terminada
-- `MESSAGE_RECEIVED`: Mensaje recibido
-- `ERROR`: Error de red
+Sistema de eventos pub/sub:
+- Suscripción de observadores
+- Publicación de eventos de red
+- Notificación asíncrona a suscriptores
+- Thread-safe con CopyOnWriteArrayList
 
-#### Strategy Pattern
-**Ubicación**: `com.whatsapp.network.strategy`
+#### RetryStrategy
 
-```java
-public interface RetryStrategy {
-    long getDelay(int attempt);
-    boolean shouldRetry(int attempt, Exception error);
-}
-```
+Patrón: Strategy
 
-**Implementaciones**:
+Estrategias de reintento:
 - `FixedDelayStrategy`: Reintento con delay fijo
-- `ExponentialBackoffStrategy`: Reintento con backoff exponencial
+- `ExponentialBackoffStrategy`: Backoff exponencial
+- Intercambiables sin modificar código cliente
 
-### 4. Capa de Comando (Command)
-**Ubicación**: `com.whatsapp.command`
+### Capa de Protocolo
 
-**Patrón**: Command
+**Paquete**: `com.whatsapp.protocol`
 
-```java
-public interface Command {
-    void execute();
-    void undo();
-}
+#### MessageHeader
 
-public class CommandInvoker {
-    - Stack<Command> history
-    
-    + executeCommand(command): void
-    + undoLastCommand(): void
-}
-```
+Estructura de cabecera de mensajes:
+- Tipo de mensaje (CHAT, ARCHIVO, VIDEO, AUDIO, CONTROL)
+- Longitud del payload
+- ID de correlación
+- Checksum CRC32
+- Serialización a bytes
 
-**Comandos implementados**:
+Formato: `[Header: 13 bytes][Payload: variable]`
+
+### Capa de Comando
+
+**Paquete**: `com.whatsapp.command`
+
+Patrón: Command
+
+Comandos implementados:
 - `SendMessageCommand`: Envío de mensajes
 - `SendFileCommand`: Envío de archivos
 - `StartVideoCallCommand`: Inicio de videollamada
 
-**Beneficios**:
-- Desacoplamiento entre UI y lógica
-- Historial de acciones
-- Posibilidad de deshacer operaciones
+`CommandInvoker` gestiona ejecución y historial para deshacer operaciones.
 
-### 5. Capa de Protocolo
-**Ubicación**: `com.whatsapp.protocol`
+### Capa de Datos (Repository)
 
-Define el formato de los mensajes en la red.
+**Paquete**: `com.whatsapp.repository`
 
-```java
-public class MessageHeader {
-    - byte version
-    - byte tipo (CHAT, ARCHIVO, VIDEO, AUDIO, CONTROL)
-    - long timestamp
-    - int contentLength
-    - String senderId
-    
-    + toBytes(): byte[]
-    + fromBytes(data): MessageHeader
-}
-```
+Patrón: Repository
 
-**Estructura del mensaje**:
-```
-[Header: 256 bytes] + [Content: variable]
-```
-
-### 6. Capa de Datos (Repository)
-**Ubicación**: `com.whatsapp.repository`
-
-**Patrón**: Repository
-
-Abstrae el acceso a datos de la base de datos.
-
-```java
-public interface IRepository<T> {
-    T save(T entity);
-    Optional<T> findById(Long id);
-    List<T> findAll();
-    void update(T entity);
-    void delete(Long id);
-}
-```
-
-**Implementaciones**:
+Repositorios implementados:
 - `UsuarioRepository`: CRUD de usuarios
-- `LogRepository`: Gestión de logs
+- `LogRepository`: Gestión de logs con consultas por fecha, traceId, userId
 - `TransferenciaRepository`: Historial de transferencias
+- `RoomRepository`: Gestión de rooms y miembros
 
-### 7. Capa de Base de Datos
-**Ubicación**: `com.whatsapp.database`
+Todos implementan `IRepository<T>` con operaciones CRUD estándar.
+
+### Capa de Base de Datos
+
+**Paquete**: `com.whatsapp.database`
 
 #### DatabaseManager
-**Patrón**: Singleton
 
-```java
-public class DatabaseManager {
-    - DatabaseConfig config
-    - Connection connection
-    
-    + getInstance(): DatabaseManager
-    + getConnection(): Connection
-    - initializeDatabase(): void
-}
-```
+Patrón: Singleton
 
-**Responsabilidades**:
-- Gestión de pool de conexiones
+Gestión de conexión a MySQL:
+- Pool de conexiones
 - Inicialización automática de tablas
+- Configuración desde `db.properties`
 - Manejo de transacciones
 
 #### DatabaseConfig
-Carga configuración desde `db.properties`:
-```properties
-db.host=localhost
-db.port=3306
-db.database=whatsapp_clone
-db.username=root
-db.password=****
-```
 
-##  Flujo de Datos
+Carga configuración desde archivo de propiedades:
+- Host, puerto, nombre de base de datos
+- Credenciales de usuario
+- Validación de configuración
+
+## Flujos de Datos
 
 ### Flujo de Autenticación
+
 ```
-LoginView → AuthService → UsuarioRepository → DatabaseManager → MySQL
-                ↓
-         LoginResult (Usuario + NetworkFacade)
-                ↓
-         ClientView/ServerView
+LoginView → RemoteAuthClient → ControlService.sendAuthRequest
+                                    ↓
+                            [Red TCP/IP]
+                                    ↓
+                        ControlService.handleAuthRequest
+                                    ↓
+                            AuthService.autenticar
+                                    ↓
+                        UsuarioRepository.findByUsername
+                                    ↓
+                            DatabaseManager
+                                    ↓
+                                MySQL
+                                    ↓
+                        ControlService.sendAuthResponse
+                                    ↓
+                        RemoteAuthClient.onNetworkEvent
+                                    ↓
+                            LoginResult → ClientView/ServerView
 ```
 
 ### Flujo de Mensajería
+
 ```
-ChatView → Command → NetworkFacade → ChatService → ConnectionManager
-                                                          ↓
-                                                    Socket.send()
-                                                          ↓
-                                           [Red TCP/IP]
-                                                          ↓
-                                             ConnectionManager.receive()
-                                                          ↓
-                                             EventAggregator.publish()
-                                                          ↓
-                                             NetworkFacade.onEvent()
-                                                          ↓
-                                             ChatService.handleMessage()
-                                                          ↓
-                                             ChatView.displayMessage()
+ChatView → SendMessageCommand → NetworkFacade.sendMessage
+                                    ↓
+                            ChatService.sendMessage
+                                    ↓
+                        MessageHeader + serialización
+                                    ↓
+                        ConnectionManager.send
+                                    ↓
+                            [Red TCP/IP]
+                                    ↓
+                        ConnectionManager.receive
+                                    ↓
+                        EventAggregator.publish
+                                    ↓
+                        ChatService.handleReceivedMessage
+                                    ↓
+                        ChatView.displayMessage
 ```
 
-### Flujo de Transferencia de Archivos
+### Flujo de Creación de Room
+
 ```
-ClientView → SendFileCommand → FileTransferService
-                                      ↓
-                            [Divide archivo en chunks]
-                                      ↓
-                            ConnectionManager.send()
-                                      ↓
-                            [Envía header + chunks]
-                                      ↓
-                     FileTransferService.handleIncoming()
-                                      ↓
-                            [Reconstruye archivo]
-                                      ↓
-                            [Verifica checksum]
-                                      ↓
-                         TransferenciaRepository.save()
+ClientView → ControlService.sendRoomCreateRequest
+                                    ↓
+                            [Red TCP/IP]
+                                    ↓
+                        ControlService.handleRoomCreateRequest
+                                    ↓
+                        RoomService.createRoomRequest
+                                    ↓
+                        RoomRepository.save
+                                    ↓
+                        ControlService.sendRoomCreateResponse
+                                    ↓
+                        ServerView muestra solicitud pendiente
+                                    ↓
+                        Servidor aprueba → RoomService.approveRoom
+                                    ↓
+                        Notificación a todos los miembros
 ```
 
-##  Principios SOLID Aplicados
+## Patrones de Diseño Implementados
 
-### Single Responsibility Principle (SRP)
+### Singleton
+- `ConnectionManager`: Una única instancia gestiona todas las conexiones
+- `EventAggregator`: Un único agregador de eventos
+- `LogService`: Logging centralizado
+- `UserAliasRegistry`: Registro único de alias
+- `RoomService`: Gestión única de rooms
+- `DatabaseManager`: Conexión única a base de datos
+
+### Factory Method
+- `SocketFactory`: Creación de sockets TCP
+
+### Observer
+- `EventAggregator` / `NetworkEventObserver`: Sistema pub/sub para eventos de red
+
+### Strategy
+- `RetryStrategy`: Estrategias intercambiables de reintento
+
+### Command
+- `Command` / `CommandInvoker`: Encapsulación de acciones con historial
+
+### Facade
+- `NetworkFacade`: Interfaz unificada para servicios de red
+
+### Repository
+- `IRepository<T>`: Abstracción de acceso a datos
+
+### Proxy
+- `RemoteAuthClient`: Proxy para autenticación remota
+
+## Principios SOLID
+
+### Single Responsibility
 Cada clase tiene una única responsabilidad:
 - `AuthService`: Solo autenticación
 - `ChatService`: Solo mensajería
 - `ConnectionManager`: Solo gestión de conexiones
 
-### Open/Closed Principle (OCP)
+### Open/Closed
 - `RetryStrategy`: Abierto a extensión (nuevas estrategias), cerrado a modificación
 - `Command`: Nuevos comandos sin modificar el invoker
 
-### Liskov Substitution Principle (LSP)
-- Todas las implementaciones de `RetryStrategy` son intercambiables
-- Todos los `Repository` pueden usarse polimórficamente
+### Liskov Substitution
+- Implementaciones de `RetryStrategy` son intercambiables
+- Repositorios pueden usarse polimórficamente
 
-### Interface Segregation Principle (ISP)
-- `INetworkClient`: Interfaz específica para clientes
+### Interface Segregation
 - `IRepository`: Interfaz específica para repositorios
+- `NetworkEventObserver`: Interfaz específica para observadores
 
-### Dependency Inversion Principle (DIP)
-- Las capas superiores dependen de abstracciones (`IRepository`, `RetryStrategy`)
+### Dependency Inversion
+- Capas superiores dependen de abstracciones (`IRepository`, `RetryStrategy`)
 - No hay dependencias directas entre capas concretas
 
-##  Gestión de Concurrencia
+## Gestión de Concurrencia
 
 ### ExecutorService
-Todos los servicios usan pools de hilos:
+Servicios usan pools de hilos para operaciones asíncronas:
 ```java
 ExecutorService executorService = Executors.newCachedThreadPool();
 ```
@@ -332,6 +373,7 @@ List<NetworkEventObserver> observers = new CopyOnWriteArrayList<>();
 ```
 
 ### Sincronización
+Operaciones críticas sincronizadas:
 ```java
 synchronized (outputStream) {
     outputStream.writeInt(data.length);
@@ -340,40 +382,7 @@ synchronized (outputStream) {
 }
 ```
 
-##  Diagramas
-
-### Diagrama de Clases Principal
-```
-
-   Main      
-
-       
-       
-       ↓          ↓          ↓
-  
-LoginView ServerView ClientView
-  
-                             
-     
-                  ↓
-         
-          NetworkFacade  
-         
-                  
-     
-     ↓            ↓            ↓
-  
-ChatService FileTransfer VideoStream
-  
-                             
-      
-                  ↓
-       
-       ConnectionManager 
-       
-```
-
-##  Extensibilidad
+## Extensibilidad
 
 ### Agregar Nuevo Tipo de Mensaje
 1. Agregar constante en `MessageHeader.MessageType`
@@ -382,13 +391,10 @@ ChatService FileTransfer VideoStream
 
 ### Agregar Nueva Estrategia de Reintento
 1. Implementar interfaz `RetryStrategy`
-2. Instanciar en el cliente necesario
+2. Instanciar en el servicio necesario
 
 ### Agregar Nueva Entidad
 1. Crear modelo en `com.whatsapp.model`
 2. Crear repository implementando `IRepository`
 3. Agregar tabla en `DatabaseManager.initializeDatabase()`
 
----
-
-Esta arquitectura proporciona una base sólida, mantenible y escalable para el sistema de mensajería.

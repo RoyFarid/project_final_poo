@@ -1,183 +1,344 @@
 # API y Servicios
 
-## Contenidos
+## NetworkFacade
 
-1. [Servicios Principales](#servicios-principales)
-2. [Protocolo de Mensajería](#protocolo-de-mensajería)
-3. [API de Red](#api-de-red)
-4. [Servicios de Negocio](#servicios-de-negocio)
-5. [Comandos](#comandos)
-6. [Eventos](#eventos)
-7. [Repositorios](#repositorios)
+Interfaz principal para operaciones de red. Orquesta todos los servicios de red.
 
----
+### Conexión
 
-## Servicios Principales
-
-### NetworkFacade
-
-Interfaz principal para operaciones de red.
-
-```java
-public class NetworkFacade implements NetworkEventObserver
-```
-
-#### Constructor
-```java
-public NetworkFacade()
-```
-Inicializa todos los servicios de red y se suscribe a eventos.
-
-#### Métodos de Conexión
-
-##### startServer
 ```java
 public void startServer(int port) throws IOException
 ```
 Inicia el servidor en el puerto especificado.
 
-**Parámetros:**
-- `port`: Puerto en el que escuchar (típicamente 5000)
-
-**Excepciones:**
-- `IOException`: Si el puerto está ocupado o hay error de red
-
-**Ejemplo:**
-```java
-NetworkFacade facade = new NetworkFacade();
-facade.startServer(5000);
-```
-
-##### connectToServer
 ```java
 public void connectToServer(String host, int port) throws IOException
 ```
 Conecta como cliente a un servidor.
 
-**Parámetros:**
-- `host`: IP o hostname del servidor
-- `port`: Puerto del servidor
-
-**Ejemplo:**
-```java
-facade.connectToServer("192.168.1.100", 5000);
-```
-
-##### disconnect
 ```java
 public void disconnect()
 ```
 Desconecta todas las conexiones y detiene servicios.
 
-#### Métodos de Chat
-
-##### sendMessage
-```java
-public void sendMessage(String connectionId, String message, Long userId, String peerIp) throws IOException
-```
-
-**Parámetros:**
-- `connectionId`: ID de la conexión destino
-- `message`: Texto del mensaje
-- `userId`: ID del usuario que envía
-- `peerIp`: IP del destinatario
-
-**Ejemplo:**
-```java
-facade.sendMessage(connId, "Hola mundo", 1L, "192.168.1.100");
-```
-
-#### Métodos de Transferencia de Archivos
-
-##### sendFile
-```java
-public void sendFile(String serverConnectionId, String targetConnectionId, String filePath, Long userId) throws IOException
-```
-
-**Parámetros:**
-- `serverConnectionId`: ID de conexión al servidor
-- `targetConnectionId`: ID del destinatario
-- `filePath`: Ruta completa del archivo
-- `userId`: ID del usuario
-
-**Ejemplo:**
-```java
-facade.sendFile(serverId, targetId, "/path/to/file.pdf", 1L);
-```
-
-#### Métodos de Video
-
-##### startVideoCall
-```java
-public void startVideoCall(String serverConnectionId, String targetConnectionId)
-```
-Inicia videollamada con streaming de video y audio.
-
-##### stopVideoCall
-```java
-public void stopVideoCall()
-```
-Detiene la videollamada activa.
-
-##### setMicrophoneMuted
-```java
-public void setMicrophoneMuted(boolean muted)
-```
-Silencia o activa el micrófono durante llamada.
-
-##### setSpeakerMuted
-```java
-public void setSpeakerMuted(boolean muted)
-```
-Silencia o activa el altavoz durante llamada.
-
-#### Métodos de Información
-
-##### getConnectionState
 ```java
 public ConnectionState getConnectionState()
 ```
-Retorna el estado actual de conexión.
+Retorna el estado actual de conexión (DESCONECTADO, CONECTANDO, ACTIVO, ERROR).
 
-**Estados posibles:**
-- `DESCONECTADO`
-- `CONECTANDO`
-- `ACTIVO`
-- `ERROR`
-
-##### getConnectedClients
 ```java
 public Set<String> getConnectedClients()
 ```
 Retorna conjunto de IDs de clientes conectados.
 
----
-
-##  Protocolo de Mensajería
-
-### MessageHeader
-
-Estructura de cabecera de todos los mensajes en la red.
+### Mensajería
 
 ```java
-public class MessageHeader implements Serializable
+public void sendMessage(String connectionId, String message, Long userId, String peerIp) throws IOException
 ```
+Envía mensaje de texto a un usuario específico.
 
-#### Constantes
+### Transferencia de Archivos
+
+```java
+public void sendFile(String serverConnectionId, String targetConnectionId, String filePath, Long userId) throws IOException
+```
+Envía archivo dividido en chunks con verificación de integridad.
+
+### Videollamadas
+
+```java
+public void startVideoCall(String serverConnectionId, String targetConnectionId)
+```
+Inicia videollamada con streaming de video y audio.
+
+```java
+public void stopVideoCall()
+```
+Detiene la videollamada activa.
+
+```java
+public void setMicrophoneMuted(boolean muted)
+```
+Silencia o activa el micrófono durante llamada.
+
+```java
+public void setSpeakerMuted(boolean muted)
+```
+Silencia o activa el altavoz durante llamada.
+
+## ControlService
+
+Maneja mensajes de control del sistema. Tipos de mensajes de control:
+
+- `CONTROL_USER_LIST`: Lista de usuarios conectados
+- `CONTROL_USER_CONNECTED`: Notificación de usuario conectado
+- `CONTROL_USER_DISCONNECTED`: Notificación de usuario desconectado
+- `CONTROL_USER_ALIAS`: Actualización de alias de usuario
+- `CONTROL_AUTH_REQUEST`: Solicitud de autenticación
+- `CONTROL_AUTH_RESPONSE`: Respuesta de autenticación
+- `CONTROL_REGISTER_REQUEST`: Solicitud de registro
+- `CONTROL_REGISTER_RESPONSE`: Respuesta de registro
+- `CONTROL_ROOM_CREATE_REQUEST`: Solicitud de creación de room
+- `CONTROL_ROOM_CREATE_RESPONSE`: Respuesta de creación de room
+- `CONTROL_ROOM_APPROVE`: Aprobación de room
+- `CONTROL_ROOM_REJECT`: Rechazo de room
+- `CONTROL_ROOM_JOIN_REQUEST`: Solicitud de unión a room
+- `CONTROL_ROOM_JOIN_RESPONSE`: Respuesta de unión a room
+- `CONTROL_ROOM_LEAVE`: Salida de room
+- `CONTROL_ROOM_CLOSE`: Cierre de room
+- `CONTROL_ROOM_LIST`: Lista de rooms disponibles
+- `CONTROL_ROOM_MESSAGE`: Mensaje en room
+- `CONTROL_ROOM_FILE`: Archivo en room
+- `CONTROL_ADMIN_MUTE`: Silenciar usuario (admin)
+- `CONTROL_ADMIN_UNMUTE`: Activar audio usuario (admin)
+- `CONTROL_ADMIN_DISABLE_CAMERA`: Desactivar cámara (admin)
+- `CONTROL_ADMIN_ENABLE_CAMERA`: Activar cámara (admin)
+- `CONTROL_ADMIN_BLOCK_MESSAGES`: Bloquear mensajes (admin)
+- `CONTROL_ADMIN_UNBLOCK_MESSAGES`: Desbloquear mensajes (admin)
+
+### Métodos Principales
+
+```java
+public void sendUserList(String connectionId) throws IOException
+```
+Envía lista de usuarios conectados a un cliente específico.
+
+```java
+public void broadcastUserList()
+```
+Difunde lista de usuarios a todos los clientes.
+
+```java
+public void sendControlMessage(String connectionId, byte controlType, String data) throws IOException
+```
+Envía mensaje de control a un cliente específico.
+
+```java
+public void sendAuthRequest(String serverConnectionId, String username, String password) throws IOException
+```
+Envía solicitud de autenticación al servidor.
+
+```java
+public void sendRegisterRequest(String serverConnectionId, String username, String password, String email) throws IOException
+```
+Envía solicitud de registro al servidor.
+
+```java
+public void handleControlMessage(byte[] data, String source)
+```
+Procesa mensaje de control recibido.
+
+## RoomService
+
+Gestión de salas de chat grupales. Patrón Singleton.
+
+### Métodos Principales
+
+```java
+public Room createRoomRequest(String roomName, String creatorConnectionId, String creatorUsername, Set<String> memberConnectionIds, String requestMessage)
+```
+Crea solicitud de room pendiente de aprobación.
+
+```java
+public Room createRoomRequest(String roomName, String creatorConnectionId, String creatorUsername, Set<String> memberConnectionIds, String requestMessage, boolean includeServer)
+```
+Crea solicitud de room con opción de incluir servidor.
+
+```java
+public Room createRoomByServer(String roomName, Set<String> memberConnectionIds, boolean includeServer)
+```
+Crea room activo directamente desde el servidor.
+
+```java
+public boolean approveRoom(Long roomId)
+```
+Aprueba un room pendiente.
+
+```java
+public boolean rejectRoom(Long roomId)
+```
+Rechaza un room pendiente.
+
+```java
+public boolean joinRoom(Long roomId, String connectionId, String username)
+```
+Une un usuario a un room activo.
+
+```java
+public boolean leaveRoom(Long roomId, String connectionId)
+```
+Saca un usuario de un room.
+
+```java
+public boolean closeRoom(Long roomId)
+```
+Cierra un room.
+
+```java
+public List<Room> getActiveRooms()
+```
+Retorna lista de rooms activos.
+
+```java
+public Optional<Room> getRoomById(Long roomId)
+```
+Obtiene room por ID.
+
+## AuthService
+
+Gestión de autenticación y autorización.
+
+```java
+public Usuario registrar(String username, String password, String email)
+```
+Registra nuevo usuario con validación y hashing BCrypt.
+
+```java
+public Optional<Usuario> autenticar(String username, String password)
+```
+Autentica usuario. Retorna Optional vacío si falla.
+
+```java
+public boolean cambiarPassword(Long userId, String oldPassword, String newPassword)
+```
+Cambia contraseña de usuario.
+
+## ChatService
+
+Manejo de mensajería de texto.
+
+```java
+public void sendMessage(String connectionId, String message, Long userId, String peerIp) throws IOException
+```
+Envía mensaje con serialización y checksum.
+
+```java
+public void handleReceivedMessage(byte[] data, String source)
+```
+Procesa mensaje recibido, verifica checksum y publica evento.
+
+## FileTransferService
+
+Transferencia de archivos con integridad.
+
+```java
+public void sendFile(String serverConnectionId, String targetConnectionId, String filePath, Long userId) throws IOException
+```
+Envía archivo dividido en chunks de 64KB con checksum SHA-256.
+
+```java
+public void handleIncomingPacket(byte[] data, String source)
+```
+Procesa chunks recibidos, ensambla archivo y verifica integridad.
+
+## VideoStreamService y AudioStreamService
+
+Streaming multimedia en tiempo real.
+
+```java
+public void startStreaming(String serverConnectionId, String targetConnectionId)
+```
+Inicia captura y transmisión de video/audio.
+
+```java
+public void stopStreaming()
+```
+Detiene captura y transmisión.
+
+## RemoteAuthClient
+
+Cliente auxiliar para autenticación remota. Patrón Proxy.
+
+```java
+public OperationResultPayload authenticate(String serverConnectionId, String username, String password) throws IOException, TimeoutException, InterruptedException
+```
+Autentica usuario remoto con timeout de 10 segundos.
+
+```java
+public OperationResultPayload register(String serverConnectionId, String username, String password, String email) throws IOException, TimeoutException, InterruptedException
+```
+Registra usuario remoto con timeout de 10 segundos.
+
+## UserAliasRegistry
+
+Registro centralizado de alias de usuarios. Patrón Singleton.
+
+```java
+public void registerAlias(String connectionId, String alias)
+```
+Registra alias para un connectionId.
+
+```java
+public void removeAlias(String connectionId)
+```
+Elimina alias de un connectionId.
+
+```java
+public String getAliasOrDefault(String connectionId)
+```
+Obtiene alias o retorna connectionId si no existe.
+
+```java
+public Map<String, String> snapshot()
+```
+Retorna snapshot del registro de alias.
+
+## ConnectionManager
+
+Gestión centralizada de conexiones TCP/IP. Patrón Singleton.
+
+```java
+public static ConnectionManager getInstance()
+```
+Obtiene instancia única.
+
+```java
+public void startServer(int port) throws IOException
+```
+Inicia servidor en el puerto especificado.
+
+```java
+public void connectToServer(String host, int port) throws IOException
+```
+Conecta como cliente al servidor.
+
+```java
+public void send(String connectionId, byte[] data) throws IOException
+```
+Envía datos a una conexión específica.
+
+```java
+public void broadcast(byte[] data)
+```
+Envía datos a todas las conexiones activas.
+
+```java
+public void disconnectClient(String connectionId)
+```
+Desconecta un cliente específico.
+
+```java
+public Set<String> getConnectedClients()
+```
+Retorna conjunto de IDs de clientes conectados.
+
+```java
+public boolean isServerMode()
+```
+Indica si está en modo servidor.
+
+## MessageHeader
+
+Estructura de cabecera de mensajes.
+
+### Constantes
+
 ```java
 public static final int HEADER_SIZE = 13; // bytes
 ```
 
-#### Estructura
-
-| Campo | Tipo | Tamaño | Descripción |
-|-------|------|--------|-------------|
-| tipo | byte | 1 byte | Tipo de mensaje |
-| longitud | int | 4 bytes | Tamaño del payload |
-| correlId | int | 4 bytes | ID de correlación |
-| checksum | int | 4 bytes | Verificación CRC32 |
-
-#### Tipos de Mensaje
+### Tipos de Mensaje
 
 ```java
 public static class MessageType {
@@ -189,398 +350,19 @@ public static class MessageType {
 }
 ```
 
-#### Métodos
+### Métodos
 
-##### toBytes
 ```java
 public byte[] toBytes()
 ```
-Convierte el header a array de bytes para transmisión.
+Convierte header a array de bytes.
 
-##### fromBytes
 ```java
 public static MessageHeader fromBytes(byte[] data)
 ```
-Reconstruye header desde bytes recibidos.
+Reconstruye header desde bytes.
 
-**Ejemplo:**
-```java
-MessageHeader header = new MessageHeader(
-    MessageType.CHAT,
-    messageBytes.length,
-    12345,
-    calculateChecksum(messageBytes)
-);
-byte[] headerBytes = header.toBytes();
-```
-
-### Formato de Mensaje Completo
-
-Header (13 bytes) + Payload (variable). El header incluye tipo, longitud, correlId y checksum.
-
----
-
-##  API de Red
-
-### ConnectionManager
-
-Gestiona todas las conexiones de red.
-
-```java
-public class ConnectionManager // Singleton
-```
-
-#### Obtener Instancia
-```java
-ConnectionManager manager = ConnectionManager.getInstance();
-```
-
-#### Métodos Principales
-
-##### send
-```java
-public void send(String connectionId, byte[] data) throws IOException
-```
-Envía datos a una conexión específica.
-
-**Protocolo:**
-```java
-// Formato: [length:4 bytes][data:length bytes]
-outputStream.writeInt(data.length);
-outputStream.write(data);
-outputStream.flush();
-```
-
-##### broadcast
-```java
-public void broadcast(byte[] data)
-```
-Envía datos a todas las conexiones activas.
-
-**Ejemplo:**
-```java
-ConnectionManager manager = ConnectionManager.getInstance();
-byte[] message = createMessage("Broadcast a todos");
-manager.broadcast(message);
-```
-
-##### disconnectClient
-```java
-public void disconnectClient(String connectionId)
-```
-Desconecta un cliente específico.
-
-### SocketFactory
-
-Factory para crear sockets.
-
-```java
-public class SocketFactory
-```
-
-#### Métodos
-
-##### createTcpSocket
-```java
-public static Socket createTcpSocket(String host, int port) throws IOException
-```
-
-##### createTcpServerSocket
-```java
-public static ServerSocket createTcpServerSocket(int port) throws IOException
-```
-
----
-
-##  Servicios de Negocio
-
-### AuthService
-
-Gestión de autenticación y seguridad.
-
-```java
-public class AuthService
-```
-
-#### Métodos
-
-##### registrar
-```java
-public Usuario registrar(String username, String password, String email)
-```
-
-**Validaciones:**
-- Username no vacío, único
-- Password mínimo 6 caracteres
-- Email válido con @
-
-**Proceso:**
-Valida entrada, verifica unicidad, genera salt BCrypt (12 rounds), hashea password, persiste usuario.
-
-**Ejemplo:**
-```java
-AuthService auth = new AuthService();
-Usuario user = auth.registrar("juanito", "pass123", "juan@email.com");
-```
-
-##### autenticar
-```java
-public Optional<Usuario> autenticar(String username, String password)
-```
-
-**Retorna:**
-- `Optional.of(usuario)` si autenticación exitosa
-- `Optional.empty()` si falla
-
-**Proceso:**
-Busca usuario, verifica estado ACTIVO, valida password con BCrypt, actualiza último login.
-
-**Ejemplo:**
-```java
-Optional<Usuario> userOpt = auth.autenticar("juanito", "pass123");
-if (userOpt.isPresent()) {
-    Usuario user = userOpt.get();
-    // Iniciar sesión
-}
-```
-
-##### cambiarPassword
-```java
-public boolean cambiarPassword(Long userId, String oldPassword, String newPassword)
-```
-
-### ChatService
-
-Gestión de mensajes de chat.
-
-```java
-public class ChatService
-```
-
-#### sendMessage
-```java
-public void sendMessage(String connectionId, String message, Long userId, String peerIp) throws IOException
-```
-
-**Proceso:**
-Crea MessageHeader (tipo CHAT), serializa mensaje, calcula checksum, envía vía ConnectionManager, registra en DB.
-
-#### handleReceivedMessage
-```java
-public void handleReceivedMessage(byte[] data, String source)
-```
-
-**Proceso:**
-Parsea MessageHeader, extrae payload, verifica checksum, publica evento MESSAGE_RECEIVED, registra en DB.
-
-### FileTransferService
-
-Transferencia de archivos con integridad.
-
-```java
-public class FileTransferService
-```
-
-#### sendFile
-```java
-public void sendFile(String serverConnectionId, String targetConnectionId, String filePath, Long userId) throws IOException
-```
-
-**Proceso:**
-Lee archivo, calcula checksum SHA-256, divide en chunks 64KB, envía header + chunks, registra en DB.
-
-**Metadata enviada:**
-```java
-{
-    "fileName": "documento.pdf",
-    "fileSize": 2048576,
-    "checksum": "sha256hash...",
-    "totalChunks": 32
-}
-```
-
-#### handleIncomingPacket
-```java
-public void handleIncomingPacket(byte[] data, String source)
-```
-
-**Proceso:**
-Identifica tipo (header/chunk/final), almacena chunks en buffer, al completar ensambla archivo, verifica checksum, guarda en disco.
-
-### VideoStreamService & AudioStreamService
-
-Streaming de multimedia en tiempo real.
-
-```java
-public class VideoStreamService
-public class AudioStreamService
-```
-
-#### startStreaming
-```java
-public void startStreaming(String serverConnectionId, String targetConnectionId)
-```
-
-**Video:**
-- Captura desde webcam (30 FPS)
-- Comprime frames (JPEG)
-- Envía como mensajes VIDEO
-
-**Audio:**
-- Captura desde micrófono (44.1 KHz)
-- Codifica en formato PCM
-- Envía como mensajes AUDIO
-
-#### stopStreaming
-```java
-public void stopStreaming()
-```
-Detiene captura y transmisión.
-
----
-
-## Comandos
-
-### Patrón Command
-
-```java
-public interface Command {
-    void execute();
-    void undo();
-}
-```
-
-### SendMessageCommand
-
-```java
-public class SendMessageCommand implements Command
-```
-
-**Constructor:**
-```java
-public SendMessageCommand(
-    NetworkFacade facade,
-    String connectionId,
-    String message,
-    Long userId,
-    String peerIp
-)
-```
-
-**Uso:**
-```java
-Command cmd = new SendMessageCommand(facade, connId, "Hola", 1L, "192.168.1.1");
-CommandInvoker invoker = new CommandInvoker();
-invoker.executeCommand(cmd);
-```
-
-### SendFileCommand
-
-Similar a SendMessageCommand pero para archivos.
-
-### StartVideoCallCommand
-
-Inicia videollamada.
-
-### CommandInvoker
-
-```java
-public class CommandInvoker
-```
-
-#### executeCommand
-```java
-public void executeCommand(Command command)
-```
-Ejecuta comando y lo guarda en historial.
-
-#### undoLastCommand
-```java
-public void undoLastCommand()
-```
-Deshace último comando ejecutado.
-
----
-
-##  Eventos
-
-### Sistema Observer
-
-```java
-public interface NetworkEventObserver {
-    void onNetworkEvent(NetworkEvent event);
-}
-```
-
-### EventAggregator
-
-Publicador/Suscriptor de eventos.
-
-```java
-EventAggregator aggregator = EventAggregator.getInstance();
-```
-
-#### subscribe
-```java
-public void subscribe(NetworkEventObserver observer)
-```
-
-#### publish
-```java
-public void publish(NetworkEvent event)
-```
-
-### NetworkEvent
-
-```java
-public class NetworkEvent
-```
-
-**Tipos de eventos:**
-```java
-public enum EventType {
-    CONNECTED,
-    DISCONNECTED,
-    MESSAGE_RECEIVED,
-    ERROR,
-    FILE_TRANSFER_PROGRESS,
-    FILE_TRANSFER_COMPLETE,
-    VIDEO_FRAME_RECEIVED
-}
-```
-
-**Estructura:**
-```java
-NetworkEvent event = new NetworkEvent(
-    EventType.MESSAGE_RECEIVED,
-    messageData,
-    sourceConnectionId
-);
-```
-
-**Ejemplo de uso:**
-```java
-public class MyObserver implements NetworkEventObserver {
-    @Override
-    public void onNetworkEvent(NetworkEvent event) {
-        switch (event.getType()) {
-            case MESSAGE_RECEIVED:
-                handleMessage(event.getData());
-                break;
-            case DISCONNECTED:
-                handleDisconnect(event.getSource());
-                break;
-        }
-    }
-}
-
-// Suscribirse
-EventAggregator.getInstance().subscribe(new MyObserver());
-```
-
----
-
-##  Repositorios
+## Repositorios
 
 ### IRepository Interface
 
@@ -597,211 +379,63 @@ public interface IRepository<T> {
 ### UsuarioRepository
 
 ```java
-public class UsuarioRepository implements IRepository<Usuario>
-```
-
-#### Métodos Específicos
-
-##### findByUsername
-```java
 public Optional<Usuario> findByUsername(String username)
 ```
+Busca usuario por nombre de usuario.
 
-##### updateLastLogin
 ```java
 public void updateLastLogin(Long userId)
 ```
-
-**Ejemplo:**
-```java
-UsuarioRepository repo = new UsuarioRepository();
-Optional<Usuario> user = repo.findByUsername("juanito");
-```
+Actualiza último login del usuario.
 
 ### LogRepository
 
 ```java
-public class LogRepository implements IRepository<Log>
-```
-
-#### Métodos Específicos
-
-##### findByDateRange
-```java
 public List<Log> findByDateRange(LocalDateTime start, LocalDateTime end)
 ```
+Busca logs por rango de fechas.
 
-##### findByTraceId
 ```java
 public List<Log> findByTraceId(String traceId)
 ```
+Busca logs por traceId.
 
-##### findByUserId
 ```java
 public List<Log> findByUserId(Long userId)
 ```
+Busca logs por usuario.
 
 ### TransferenciaRepository
 
 ```java
-public class TransferenciaRepository implements IRepository<Transferencia>
-```
-
-#### Métodos Específicos
-
-##### findByUserId
-```java
 public List<Transferencia> findByUserId(Long userId)
 ```
+Busca transferencias por usuario.
 
-##### findByEstado
 ```java
 public List<Transferencia> findByEstado(Transferencia.EstadoTransferencia estado)
 ```
+Busca transferencias por estado.
 
-##### updateEstado
 ```java
 public void updateEstado(Long id, Transferencia.EstadoTransferencia nuevoEstado)
 ```
+Actualiza estado de transferencia.
 
-**Ejemplo:**
-```java
-TransferenciaRepository repo = new TransferenciaRepository();
-List<Transferencia> transfers = repo.findByUserId(1L);
-```
-
----
-
-##  Seguridad
-
-### BCrypt
-
-La aplicación usa BCrypt para hashing de contraseñas.
+### RoomRepository
 
 ```java
-// Generar hash
-String salt = BCrypt.gensalt(12); // 12 rounds
-String hash = BCrypt.hashpw(password, salt);
-
-// Verificar
-boolean valid = BCrypt.checkpw(password, storedHash);
+public List<Room> findByServerUsername(String serverUsername)
 ```
-
-**Configuración:**
-- Rounds: 12 (balance seguridad/performance)
-- Salt generado automáticamente
-- Hash de 60 caracteres
-
----
-
-##  Códigos de Estado
-
-### ConnectionState
+Busca rooms por servidor.
 
 ```java
-public enum ConnectionState {
-    DESCONECTADO,
-    CONECTANDO,
-    ACTIVO,
-    ERROR
-}
+public List<Room> findByEstado(Room.EstadoRoom estado)
 ```
-
-### EstadoTransferencia
+Busca rooms por estado.
 
 ```java
-public enum EstadoTransferencia {
-    PENDIENTE,
-    EN_PROGRESO,
-    COMPLETADA,
-    FALLIDA,
-    CANCELADA
-}
+public void deleteAllByServerUsername(String serverUsername)
 ```
+Elimina todos los rooms de un servidor.
 
-### EstadoUsuario
-
-```java
-public enum EstadoUsuario {
-    ACTIVO,
-    INACTIVO,
-    BLOQUEADO
-}
-```
-
----
-
-##  Ejemplos de Uso
-
-### Ejemplo Completo: Enviar Mensaje
-
-```java
-// 1. Crear NetworkFacade
-NetworkFacade facade = new NetworkFacade();
-
-// 2. Conectar a servidor
-facade.connectToServer("192.168.1.100", 5000);
-
-// 3. Obtener ID de conexión
-String connId = facade.getPrimaryConnectionId();
-
-// 4. Enviar mensaje
-facade.sendMessage(connId, "Hola mundo", 1L, "192.168.1.100");
-```
-
-### Ejemplo Completo: Transferir Archivo
-
-```java
-NetworkFacade facade = new NetworkFacade();
-facade.connectToServer("localhost", 5000);
-
-String serverId = facade.getPrimaryConnectionId();
-String targetId = obtenerIdDestinatario();
-
-facade.sendFile(serverId, targetId, "/ruta/archivo.pdf", 1L);
-```
-
-### Ejemplo Completo: Videollamada
-
-```java
-NetworkFacade facade = new NetworkFacade();
-facade.connectToServer("localhost", 5000);
-
-// Iniciar llamada
-facade.startVideoCall(serverId, targetId);
-
-// Durante la llamada
-facade.setMicrophoneMuted(false);
-facade.setSpeakerMuted(false);
-
-// Terminar
-facade.stopVideoCall();
-```
-
----
-
-##  Performance
-
-### Métricas Típicas
-
-| Operación | Tiempo Promedio |
-|-----------|-----------------|
-| Autenticación | 50-100ms |
-| Envío de mensaje | 10-30ms |
-| Transferencia archivo (1MB) | 1-3s |
-| Inicio videollamada | 200-500ms |
-| Frame de video | 33ms (30 FPS) |
-
-### Límites
-
-| Recurso | Límite |
-|---------|--------|
-| Tamaño máximo archivo | 100 MB |
-| Conexiones simultáneas | 100 clientes |
-| FPS video | 30 |
-| Calidad audio | 44.1 KHz |
-| Chunk size archivos | 64 KB |
-
----
-
-Esta documentación cubre los aspectos principales de la API. Para detalles de implementación, consultar el código fuente en cada paquete.

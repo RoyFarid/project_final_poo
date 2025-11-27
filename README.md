@@ -1,84 +1,86 @@
 # RoomWave
 
-Aplicación de mensajería instantánea en Java con chat, transferencia de archivos y videollamadas.
+Aplicación de mensajería instantánea en Java con arquitectura cliente-servidor. Soporta chat en tiempo real, transferencia de archivos, videollamadas y gestión de salas de chat (rooms).
 
-## Inicio Rápido
+## Características Principales
 
-### Primera vez
+- **Chat en tiempo real**: Mensajería instantánea entre usuarios conectados
+- **Transferencia de archivos**: Envío de archivos con verificación de integridad mediante checksums
+- **Videollamadas**: Streaming de video y audio en tiempo real
+- **Sistema de Rooms**: Creación y gestión de salas de chat grupales
+- **Autenticación segura**: Sistema de registro y login con BCrypt
+- **Modo servidor/cliente**: Arquitectura centralizada con servidor y múltiples clientes
+- **Base de datos MySQL**: Persistencia de usuarios, logs, transferencias y rooms
 
-**Requisitos:** Java 17+, Maven 3.6+, MySQL 8.0+
+## Requisitos
+
+- Java JDK 17 o superior
+- Maven 3.6 o superior
+- MySQL 8.0 o superior
+- JavaFX 21 (incluido como dependencia)
+
+## Instalación Rápida
 
 ```bash
-# Windows
-setup.bat
+# Configurar base de datos
+cp db.properties.example db.properties
+# Editar db.properties con tus credenciales de MySQL
 
-# Linux/macOS  
-./setup.sh
-```
-
-El script configura todo automáticamente. Solo edita `db.properties` cuando se abra.
-
-### Ya configurado
-
-```bash
+# Compilar y ejecutar
+mvn clean install
 mvn javafx:run
 ```
 
-### Manual
+Para una guía detallada de instalación, ver [INSTALLATION.md](docs/INSTALLATION.md).
 
-```bash
-cp db.properties.example db.properties  # Editar credenciales
-mvn clean install && mvn javafx:run
+## Uso Básico
+
+1. **Registro**: Crear una cuenta nueva desde la pantalla de login
+2. **Modo Servidor**: Iniciar sesión como servidor para hostear la sesión
+3. **Modo Cliente**: Iniciar sesión como cliente y conectarse a un servidor
+4. **Chat**: Enviar mensajes a usuarios individuales o crear rooms grupales
+5. **Archivos**: Compartir archivos con otros usuarios
+6. **Video**: Iniciar videollamadas con otros usuarios
+
+## Estructura del Proyecto
+
 ```
-
-## Uso
-
-Registrarse → Elegir modo (Servidor o Cliente) → Chatear/Archivos/Video. Ver [USER_GUIDE.md](docs/USER_GUIDE.md).
-
-## Características
-
-- Chat en tiempo real
-- Transferencia de archivos con verificación de integridad
-- Videollamadas con audio
-- Autenticación segura (BCrypt)
-- Base de datos MySQL
-
-## Arquitectura
-
-Capas: UI, Servicios, Red, Datos. Patrones: Singleton, Factory, Observer, Command, Strategy, Facade, Repository. Ver [ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-## Problemas Comunes
-
-**No conecta a MySQL**
-- Verificar que MySQL esté ejecutándose
-- Revisar credenciales en `db.properties`
-
-**Puerto 5000 ocupado**
-```bash
-# Windows
-netstat -ano | findstr :5000
-taskkill /PID <PID> /F
-
-# Linux/macOS
-lsof -ti:5000 | xargs kill -9
-```
-
-**Error de compilación**
-```bash
-mvn clean
-mvn install
+src/main/java/com/whatsapp/
+├── command/          # Patrón Command para acciones
+├── database/         # Gestión de conexión a MySQL
+├── model/            # Entidades: Usuario, Room, Transferencia, Log
+├── network/          # Gestión de conexiones TCP/IP
+├── protocol/         # Protocolo de mensajería
+├── repository/       # Patrón Repository para acceso a datos
+├── service/          # Lógica de negocio
+└── ui/               # Interfaz gráfica JavaFX
 ```
 
 ## Documentación
 
-- [docs/USER_GUIDE.md](docs/USER_GUIDE.md) - Manual de usuario
-- [docs/INSTALLATION.md](docs/INSTALLATION.md) - Instalación detallada
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - Arquitectura y patrones
-- [docs/API.md](docs/API.md) - API y servicios
-- [docs/DATABASE.md](docs/DATABASE.md) - Esquema de base de datos
-- [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) - Guía de desarrollo
+- [INSTALLATION.md](docs/INSTALLATION.md) - Guía detallada de instalación
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - Arquitectura del sistema y patrones de diseño
+- [API.md](docs/API.md) - Documentación de servicios y APIs
+- [DATABASE.md](docs/DATABASE.md) - Esquema de base de datos
+- [USER_GUIDE.md](docs/USER_GUIDE.md) - Manual de usuario
+- [DEVELOPMENT.md](docs/DEVELOPMENT.md) - Guía para desarrolladores
 
-## Stack
+## Stack Tecnológico
 
-Java 17, JavaFX 21, MySQL 8.2, Maven, BCrypt, SLF4J/Logback, Webcam Capture
+- **Java 17**: Lenguaje de programación
+- **JavaFX 21**: Framework de interfaz gráfica
+- **MySQL 8.2**: Base de datos relacional
+- **Maven**: Gestión de dependencias y build
+- **BCrypt**: Hashing de contraseñas
+- **SLF4J/Logback**: Sistema de logging
+- **Webcam Capture**: Captura de video para videollamadas
 
+## Solución de Problemas
+
+Para problemas comunes de instalación y configuración, consultar la sección [Solución de Problemas](docs/INSTALLATION.md#solución-de-problemas) en INSTALLATION.md.
+
+Para problemas durante el uso de la aplicación, consultar la sección [Solución de Problemas](docs/USER_GUIDE.md#solución-de-problemas) en USER_GUIDE.md.
+
+## Licencia
+
+Este proyecto es de uso educativo.

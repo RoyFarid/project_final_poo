@@ -1,5 +1,7 @@
 -- Esquema de la base de datos whatsapp_clone
 -- Ejecuta este script en MySQL para crear todas las tablas necesarias.
+-- Nota: La aplicación crea las tablas automáticamente al iniciar, pero este script
+-- puede ser útil para setup manual o migraciones.
 
 CREATE TABLE IF NOT EXISTS Usuario (
     Id INT AUTO_INCREMENT PRIMARY KEY,
@@ -62,3 +64,4 @@ CREATE TABLE IF NOT EXISTS RoomMember (
     FOREIGN KEY (RoomId) REFERENCES Room(Id) ON DELETE CASCADE,
     INDEX idx_connection (ConnectionId)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
