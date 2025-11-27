@@ -27,6 +27,8 @@ public class ControlService {
     private final UserAliasRegistry aliasRegistry;
     private final RoomService roomService;
     private static final Map<String, PendingRoomFile> pendingRoomFiles = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Set<String> blockedMessageSenders =
+        java.util.concurrent.ConcurrentHashMap.newKeySet();
     
     // Tipos de mensajes de control
     public static final byte CONTROL_USER_LIST = 1;
@@ -348,12 +350,7 @@ public class ControlService {
                     case CONTROL_ADMIN_ENABLE_CAMERA:
                     case CONTROL_ADMIN_BLOCK_MESSAGES:
                     case CONTROL_ADMIN_UNBLOCK_MESSAGES:
-                        // Estos se manejan directamente desde el servidor
-                        eventAggregator.publish(new NetworkEvent(
-                            NetworkEvent.EventType.ERROR,
-                            controlData,
-                            source
-                        ));
+                        handleAdminControl(controlType, source);
                         break;
                     case CONTROL_ROOM_MESSAGE:
                         if (connectionManager.isServerMode()) {
@@ -815,6 +812,10 @@ public class ControlService {
     }
 
     private void handleRoomChatMessage(String payload, String senderConnectionId) {
+        if (isMessagingBlocked(senderConnectionId)) {
+            logger.info("Mensaje de room descartado de {} por bloqueo de admin", senderConnectionId);
+            return;
+        }
         try {
             String[] parts = payload.split("\\|", -1);
             if (parts.length < 2) {
@@ -1038,7 +1039,50 @@ public class ControlService {
     }
 
     public void sendAdminControl(String targetConnectionId, byte controlType) throws IOException {
+        // Persistir estado en el servidor antes de notificar al cliente
+        if (controlType == CONTROL_ADMIN_BLOCK_MESSAGES) {
+            blockMessages(targetConnectionId);
+        } else if (controlType == CONTROL_ADMIN_UNBLOCK_MESSAGES) {
+            unblockMessages(targetConnectionId);
+        }
         sendControlMessage(targetConnectionId, controlType, "");
+    }
+
+    private void handleAdminControl(byte controlType, String source) {
+        if (!connectionManager.isServerMode()) {
+            logger.debug("Control admin {} recibido en cliente desde {}", controlType, source);
+            return;
+        }
+        switch (controlType) {
+            case CONTROL_ADMIN_BLOCK_MESSAGES -> {
+                blockMessages(source);
+                logger.info("Mensajes bloqueados para {}", source);
+            }
+            case CONTROL_ADMIN_UNBLOCK_MESSAGES -> {
+                unblockMessages(source);
+                logger.info("Mensajes permitidos para {}", source);
+            }
+            default -> {
+                // Otros controles de admin aún no tienen lógica específica en el cliente
+                logger.debug("Control admin recibido ({}), sin acción específica", controlType);
+            }
+        }
+    }
+
+    public static void blockMessages(String connectionId) {
+        if (connectionId != null) {
+            blockedMessageSenders.add(connectionId);
+        }
+    }
+
+    public static void unblockMessages(String connectionId) {
+        if (connectionId != null) {
+            blockedMessageSenders.remove(connectionId);
+        }
+    }
+
+    public static boolean isMessagingBlocked(String connectionId) {
+        return connectionId != null && blockedMessageSenders.contains(connectionId);
     }
 
     public static class RoomChatMessage {

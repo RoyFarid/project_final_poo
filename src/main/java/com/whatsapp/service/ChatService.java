@@ -8,6 +8,7 @@ import com.whatsapp.protocol.MessageHeader;
 import com.whatsapp.repository.TransferenciaRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.whatsapp.service.ControlService;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -70,6 +71,10 @@ public class ChatService {
 
     public void handleReceivedMessage(byte[] data, String source) {
         try {
+            if (ControlService.isMessagingBlocked(source)) {
+                logger.info("Mensaje descartado de {} por bloqueo de admin", source);
+                return;
+            }
             // Parsear header
             byte[] headerBytes = new byte[MessageHeader.HEADER_SIZE];
             System.arraycopy(data, 0, headerBytes, 0, MessageHeader.HEADER_SIZE);
@@ -112,6 +117,10 @@ public class ChatService {
     }
 
     private void routeChatMessage(String source, String payload, int correlId) {
+        if (ControlService.isMessagingBlocked(source)) {
+            logger.info("Se bloqueó el reenvío de mensajes de {}", source);
+            return;
+        }
         int separatorIndex = payload.indexOf('|');
         if (separatorIndex <= 3) {
             logger.warn("Payload inválido para enrutamiento: " + payload);
