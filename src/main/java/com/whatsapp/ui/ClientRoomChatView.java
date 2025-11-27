@@ -27,10 +27,12 @@ public class ClientRoomChatView extends BorderPane implements com.whatsapp.netwo
     private final UserAliasRegistry aliasRegistry;
     private final ListView<String> messagesList;
     private final ListView<String> membersList;
+    private final VBox videoBox;
     private final TextField messageField;
     private final Set<String> members;
+    private final Runnable onDispose;
 
-    public ClientRoomChatView(Long roomId, String roomName, Set<String> members, String serverConnectionId) {
+    public ClientRoomChatView(Long roomId, String roomName, Set<String> members, String serverConnectionId, Runnable onDispose) {
         this.roomId = roomId;
         this.roomName = roomName;
         this.serverConnectionId = serverConnectionId;
@@ -39,8 +41,10 @@ public class ClientRoomChatView extends BorderPane implements com.whatsapp.netwo
         this.aliasRegistry = UserAliasRegistry.getInstance();
         this.messagesList = new ListView<>();
         this.membersList = new ListView<>();
+        this.videoBox = new VBox();
         this.messageField = new TextField();
         this.members = members == null ? new HashSet<>() : new HashSet<>(members);
+        this.onDispose = onDispose == null ? () -> {} : onDispose;
 
         eventAggregator.subscribe(this);
         setupUI();
@@ -48,18 +52,35 @@ public class ClientRoomChatView extends BorderPane implements com.whatsapp.netwo
     }
 
     private void setupUI() {
-        setPadding(new Insets(10));
+        setPadding(new Insets(0));
 
+        // Top bar estilo server
+        HBox topBar = new HBox();
+        topBar.setPadding(new Insets(12));
+        topBar.setStyle("-fx-background-color: #128C7E;");
         Label title = new Label("Room: " + roomName);
-        title.setStyle("-fx-font-size: 16px; -fx-font-weight: bold;");
+        title.setStyle("-fx-text-fill: white; -fx-font-size: 16px; -fx-font-weight: bold;");
+        topBar.getChildren().add(title);
 
         messagesList.setPrefHeight(320);
         membersList.setPrefWidth(200);
-        VBox membersBox = new VBox(5, new Label("Miembros"), membersList);
+        Label membersLabel = new Label("Miembros");
+        membersLabel.setStyle("-fx-font-weight: bold;");
+        VBox membersBox = new VBox(5, membersLabel, membersList);
         membersBox.setPadding(new Insets(0, 0, 0, 10));
 
-        HBox center = new HBox(10, messagesList, membersBox);
-        setTop(title);
+        // Placeholder de video (pendiente de implementar)
+        videoBox.setPrefSize(220, 180);
+        videoBox.setStyle("-fx-border-color: #cccccc; -fx-background-color: #f5f5f5;");
+        Label videoLabel = new Label("Video remoto (próximamente)");
+        videoLabel.setStyle("-fx-text-fill: #666;");
+        videoBox.setPadding(new Insets(8));
+        videoBox.getChildren().setAll(videoLabel);
+        VBox rightBox = new VBox(10, membersBox, videoBox);
+
+        HBox center = new HBox(10, messagesList, rightBox);
+        center.setPadding(new Insets(10));
+        setTop(topBar);
         setCenter(center);
 
         messageField.setPromptText("Escribe un mensaje para todos...");
@@ -67,7 +88,7 @@ public class ClientRoomChatView extends BorderPane implements com.whatsapp.netwo
         sendBtn.setOnAction(e -> sendMessage());
         messageField.setOnAction(e -> sendMessage());
         HBox bottom = new HBox(8, messageField, sendBtn);
-        bottom.setPadding(new Insets(10, 0, 0, 0));
+        bottom.setPadding(new Insets(10));
         setBottom(bottom);
     }
 
@@ -132,6 +153,7 @@ public class ClientRoomChatView extends BorderPane implements com.whatsapp.netwo
 
     public void onClose() {
         eventAggregator.unsubscribe(this);
+        onDispose.run();
     }
 
     public void openInNewStage() {

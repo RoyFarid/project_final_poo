@@ -366,8 +366,18 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
         }
         ClientRoomChatView view = openRoomChats.get(room.getId());
         if (view == null) {
-            view = new ClientRoomChatView(room.getId(), room.getName(), room.getMembers(), serverConnectionId);
-            openRoomChats.put(room.getId(), view);
+            Room snapshot = new Room();
+            snapshot.setId(room.getId());
+            snapshot.setName(room.getName());
+            snapshot.setMembers(new java.util.HashSet<>(room.getMembers()));
+            view = new ClientRoomChatView(
+                snapshot.getId(),
+                snapshot.getName(),
+                snapshot.getMembers(),
+                serverConnectionId,
+                () -> openRoomChats.remove(snapshot.getId())
+            );
+            openRoomChats.put(snapshot.getId(), view);
         }
         final ClientRoomChatView finalView = view;
         Platform.runLater(finalView::openInNewStage);
