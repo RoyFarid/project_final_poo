@@ -170,7 +170,15 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
                 if (empty || room == null) {
                     setText(null);
                 } else {
-                    setText(room.getName() + " (por " + room.getCreatorUsername() + ")");
+                    String creatorName = room.getCreatorUsername() != null
+                        ? room.getCreatorUsername()
+                        : aliasRegistry.getAliasOrDefault(room.getCreatorConnectionId());
+                    String reason = room.getRequestMessage();
+                    String summary = room.getName() + " (por " + creatorName + ")";
+                    if (reason != null && !reason.isBlank()) {
+                        summary += " - Motivo: " + reason;
+                    }
+                    setText(summary);
                 }
             }
         });
@@ -428,7 +436,15 @@ public class ServerView extends BorderPane implements NetworkEventObserver {
                     if (event.getData() instanceof Room) {
                         Room room = (Room) event.getData();
                         System.out.println("[ServerView] Room recibido: " + room.getName() + ", Estado: " + room.getEstado());
-                        addActivity("Nueva solicitud de room: " + room.getName() + " (por " + room.getCreatorUsername() + ")");
+                        String creatorName = room.getCreatorUsername() != null
+                            ? room.getCreatorUsername()
+                            : aliasRegistry.getAliasOrDefault(room.getCreatorConnectionId());
+                        String reason = room.getRequestMessage();
+                        String activity = "Nueva solicitud de room: " + room.getName() + " (por " + creatorName + ")";
+                        if (reason != null && !reason.isBlank()) {
+                            activity += " - Motivo: " + reason;
+                        }
+                        addActivity(activity);
                         refreshRoomsList();
                     } else {
                         System.out.println("[ServerView] Data no es instancia de Room: " + event.getData());

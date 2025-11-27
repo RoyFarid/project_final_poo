@@ -1,4 +1,4 @@
-package com.whatsapp.ui;
+﻿package com.whatsapp.ui;
 
 import com.whatsapp.model.Room;
 import com.whatsapp.model.Usuario;
@@ -45,10 +45,11 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
         setupUI();
         updateStatus("Conectado a " + connectedHost + ":" + connectedPort);
         requestUserListRefresh();
+        requestRoomList();
     }
 
     private void setupUI() {
-        // Panel superior - Información del cliente
+        // Panel superior - InformaciÃ³n del cliente
         VBox topPanel = new VBox(10);
         topPanel.setPadding(new Insets(20));
         topPanel.setStyle("-fx-background-color: #128C7E;");
@@ -61,7 +62,7 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
         disconnectButton.setStyle("-fx-background-color: #dc3545; -fx-text-fill: white;");
         disconnectButton.setOnAction(e -> disconnectFromServer());
 
-        HBox actionBox = new HBox(10, new Label("Sesión activa en: " + connectedHost + ":" + connectedPort), disconnectButton);
+        HBox actionBox = new HBox(10, new Label("SesiÃ³n activa en: " + connectedHost + ":" + connectedPort), disconnectButton);
         actionBox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
         topPanel.getChildren().addAll(title, actionBox);
         setTop(topPanel);
@@ -81,13 +82,18 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
             @Override
             protected void updateItem(ControlService.UserDescriptor item, boolean empty) {
                 super.updateItem(item, empty);
-                setText(empty || item == null ? null : item.getDisplayName());
+                if (empty || item == null) {
+                    setText(null);
+                } else {
+                    String alias = aliasRegistry.getAliasOrDefault(item.getConnectionId());
+                    setText(alias);
+                }
             }
         });
         usersList.setOnMouseClicked(e -> {
             ControlService.UserDescriptor selected = usersList.getSelectionModel().getSelectedItem();
             if (selected != null) {
-                openChatWindow(selected.getConnectionId(), selected.getDisplayName());
+                openChatWindow(selected.getConnectionId(), aliasRegistry.getAliasOrDefault(selected.getConnectionId()));
             }
         });
         usersBox.getChildren().addAll(usersLabel, usersList);
@@ -148,13 +154,15 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
             updateStatus("Estado: Desconectado");
             usersList.getItems().clear();
             serverUserMap.clear();
+            availableRooms.clear();
+            roomsList.getItems().clear();
         });
     }
 
     private void openChatWindow(String connectionId, String displayName) {
         String serverConnectionId = networkFacade.getPrimaryConnectionId();
         if (serverConnectionId == null) {
-            showAlert("Error", "No hay conexión activa con el servidor.", Alert.AlertType.ERROR);
+            showAlert("Error", "No hay conexiÃ³n activa con el servidor.", Alert.AlertType.ERROR);
             return;
         }
 
@@ -238,12 +246,30 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
         memberSelectionList.getItems().addAll(serverUserMap.values());
         memberSelectionList.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
         memberSelectionList.setPrefHeight(200);
+        memberSelectionList.setCellFactory(list -> new javafx.scene.control.ListCell<>() {
+            @Override
+            protected void updateItem(ControlService.UserDescriptor item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                } else {
+                    setText(aliasRegistry.getAliasOrDefault(item.getConnectionId()));
+                }
+            }
+        });
+
+        TextArea reasonField = new TextArea();
+        reasonField.setPromptText("Mensaje para el servidor (motivo de la solicitud)");
+        reasonField.setWrapText(true);
+        reasonField.setPrefRowCount(3);
 
         vbox.getChildren().addAll(
             new Label("Nombre del room:"),
             roomNameField,
-            new Label("Selecciona miembros (Ctrl+Click para múltiples):"),
-            memberSelectionList
+            new Label("Selecciona miembros (Ctrl+Click para multiples):"),
+            memberSelectionList,
+            new Label("Mensaje para el administrador:"),
+            reasonField
         );
 
         dialog.getDialogPane().setContent(vbox);
@@ -251,7 +277,7 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
             if (buttonType == ButtonType.OK) {
                 String roomName = roomNameField.getText().trim();
                 if (roomName.isEmpty()) {
-                    showAlert("Error", "El nombre del room no puede estar vacío", Alert.AlertType.ERROR);
+                    showAlert("Error", "El nombre del room no puede estar vacÃ­o", Alert.AlertType.ERROR);
                     return null;
                 }
 
@@ -260,32 +286,33 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
                     selectedMembers.add(desc.getConnectionId());
                 }
 
-                return new RoomCreationData(roomName, selectedMembers);
+                return new RoomCreationData(roomName, selectedMembers, reasonField.getText().trim());
             }
             return null;
         });
 
         dialog.showAndWait().ifPresent(data -> {
-            createRoom(data.roomName, data.members);
+            createRoom(data.roomName, data.members, data.requestMessage);
         });
     }
 
-    private void createRoom(String roomName, Set<String> memberConnectionIds) {
+    private void createRoom(String roomName, Set<String> memberConnectionIds, String requestMessage) {
         try {
             String serverConnectionId = networkFacade.getPrimaryConnectionId();
             if (serverConnectionId == null) {
-                showAlert("Error", "No hay conexión activa con el servidor.", Alert.AlertType.ERROR);
+                showAlert("Error", "No hay conexiÃ³n activa con el servidor.", Alert.AlertType.ERROR);
                 return;
             }
 
-            // Construir payload: roomName|creatorUsername|member1,member2,member3
+            // Construir payload: roomName|creatorUsername|member1,member2,member3|mensaje
             String membersStr = String.join(",", memberConnectionIds);
             String payload = encodeBase64(roomName) + "|" + 
                            encodeBase64(currentUser.getUsername()) + "|" + 
-                           encodeBase64(membersStr);
+                           encodeBase64(membersStr) + "|" +
+                           encodeBase64(requestMessage == null ? "" : requestMessage);
 
             controlService.sendControlMessage(serverConnectionId, ControlService.CONTROL_ROOM_CREATE_REQUEST, payload);
-            updateStatus("Solicitud de room '" + roomName + "' enviada. Esperando aprobación...");
+            updateStatus("Solicitud de room '" + roomName + "' enviada. Esperando aprobaciÃ³n...");
         } catch (IOException e) {
             showAlert("Error", "No se pudo crear el room: " + e.getMessage(), Alert.AlertType.ERROR);
         }
@@ -295,7 +322,7 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
         try {
             String serverConnectionId = networkFacade.getPrimaryConnectionId();
             if (serverConnectionId == null) {
-                showAlert("Error", "No hay conexión activa con el servidor.", Alert.AlertType.ERROR);
+                showAlert("Error", "No hay conexiÃ³n activa con el servidor.", Alert.AlertType.ERROR);
                 return;
             }
 
@@ -325,10 +352,12 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
     private static class RoomCreationData {
         final String roomName;
         final Set<String> members;
+        final String requestMessage;
 
-        RoomCreationData(String roomName, Set<String> members) {
+        RoomCreationData(String roomName, Set<String> members, String requestMessage) {
             this.roomName = roomName;
             this.members = members;
+            this.requestMessage = requestMessage;
         }
     }
 
@@ -354,6 +383,7 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
                         Room room = (Room) event.getData();
                         availableRooms.put(room.getId(), room);
                         refreshRoomsList();
+                        requestRoomList();
                     } else if (event.getData() instanceof String) {
                         // Parsear lista de rooms desde JSON
                         // Por ahora, solo actualizamos la lista
@@ -381,7 +411,8 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
                         Room room = (Room) event.getData();
                         availableRooms.put(room.getId(), room);
                         refreshRoomsList();
-                        showAlert("Room Aprobado", "El room '" + room.getName() + "' ha sido aprobado y está activo.", Alert.AlertType.INFORMATION);
+                        showAlert("Room Aprobado", "El room '" + room.getName() + "' ha sido aprobado y estÃ¡ activo.", Alert.AlertType.INFORMATION);
+                        requestRoomList();
                     }
                     break;
                 case ROOM_REJECTED:
@@ -390,6 +421,7 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
                         availableRooms.remove(room.getId());
                         refreshRoomsList();
                         showAlert("Room Rechazado", "El room '" + room.getName() + "' ha sido rechazado por el servidor.", Alert.AlertType.WARNING);
+                        requestRoomList();
                     }
                     break;
                 case ROOM_MEMBER_ADDED:
@@ -412,4 +444,5 @@ public class ClientView extends BorderPane implements NetworkEventObserver {
         roomsList.getItems().setAll(availableRooms.values());
     }
 }
+
 

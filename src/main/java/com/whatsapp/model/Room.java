@@ -17,6 +17,7 @@ public class Room {
     private LocalDateTime fechaCreacion;
     private Set<String> members; // Connection IDs de los miembros
     private String serverUsername; // Username del servidor que gestiona este room
+    private String requestMessage; // Mensaje opcional enviado con la solicitud
 
     public enum EstadoRoom {
         PENDIENTE, // Esperando aprobación del servidor
@@ -115,5 +116,12 @@ public class Room {
     public void setServerUsername(String serverUsername) {
         this.serverUsername = serverUsername;
     }
-}
 
+    public String getRequestMessage() {
+        return requestMessage;
+    }
+
+    public void setRequestMessage(String requestMessage) {
+        this.requestMessage = requestMessage;
+    }
+}

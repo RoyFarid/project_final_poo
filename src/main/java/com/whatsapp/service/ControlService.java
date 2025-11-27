@@ -551,7 +551,7 @@ public class ControlService {
 
     private void handleAuthRequest(String payload, String source) {
         try {
-            String[] parts = payload.split("\\|");
+            String[] parts = payload.split("\\|", -1);
             if (parts.length < 2) {
                 sendControlMessage(source, CONTROL_AUTH_RESPONSE, OperationResultPayload.error("Payload inválido").toPayload());
                 return;
@@ -614,7 +614,7 @@ public class ControlService {
             logger.info("Procesando solicitud de creación de room desde: " + source);
             logger.info("Payload recibido: " + payload);
             
-            // Formato: roomName|creatorUsername|member1,member2,member3
+            // Formato: roomName|creatorUsername|member1,member2,member3|mensaje
             String[] parts = payload.split("\\|");
             if (parts.length < 2) {
                 sendControlMessage(source, CONTROL_ROOM_CREATE_RESPONSE, 
@@ -625,6 +625,7 @@ public class ControlService {
             String roomName = decodeCredential(parts[0]);
             String creatorUsername = decodeCredential(parts[1]);
             Set<String> members = new java.util.HashSet<>();
+            String requestMessage = parts.length > 3 ? decodeCredential(parts[3]) : "";
             
             if (parts.length > 2) {
                 String membersStr = decodeCredential(parts[2]);
@@ -651,7 +652,7 @@ public class ControlService {
             
             logger.info("ServerUsername configurado: " + serverUsername);
             
-            Room room = roomService.createRoomRequest(roomName, source, creatorUsername, members);
+            Room room = roomService.createRoomRequest(roomName, source, creatorUsername, members, requestMessage);
             logger.info("Room creado con ID: " + room.getId() + ", Estado: " + room.getEstado());
             
             // Publicar evento para que el servidor vea la solicitud pendiente

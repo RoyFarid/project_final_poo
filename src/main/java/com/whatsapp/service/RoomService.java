@@ -26,6 +26,7 @@ public class RoomService {
     private final UserAliasRegistry aliasRegistry;
     private final LogService logService;
     private final Map<Long, Room> activeRoomsCache; // Cache de rooms activos en memoria
+    private final Map<Long, String> requestMessages; // Mensajes adjuntos por los clientes
     private String serverUsername;
     private String traceId;
 
@@ -36,6 +37,7 @@ public class RoomService {
         this.aliasRegistry = UserAliasRegistry.getInstance();
         this.logService = LogService.getInstance();
         this.activeRoomsCache = new ConcurrentHashMap<>();
+        this.requestMessages = new ConcurrentHashMap<>();
         this.traceId = logService.generateTraceId();
     }
 
@@ -59,7 +61,7 @@ public class RoomService {
     /**
      * Crea una solicitud de room (pendiente de aprobación)
      */
-    public Room createRoomRequest(String roomName, String creatorConnectionId, String creatorUsername, Set<String> memberConnectionIds) {
+    public Room createRoomRequest(String roomName, String creatorConnectionId, String creatorUsername, Set<String> memberConnectionIds, String requestMessage) {
         System.out.println("[RoomService] createRoomRequest llamado");
         System.out.println("[RoomService] serverUsername: " + serverUsername);
         System.out.println("[RoomService] roomName: " + roomName);
@@ -72,6 +74,7 @@ public class RoomService {
         }
 
         Room room = new Room(roomName, creatorConnectionId, creatorUsername, serverUsername);
+        room.setRequestMessage(requestMessage);
         room.getMembers().addAll(memberConnectionIds);
         room.getMembers().add(creatorConnectionId); // El creador también es miembro
         
@@ -86,6 +89,9 @@ public class RoomService {
         }
         
         activeRoomsCache.put(room.getId(), room);
+        if (requestMessage != null && !requestMessage.isBlank()) {
+            requestMessages.put(room.getId(), requestMessage);
+        }
         System.out.println("[RoomService] Room agregado a cache");
         
         logService.logInfo("Solicitud de room creada: " + roomName, "RoomService", traceId, null);
@@ -109,6 +115,7 @@ public class RoomService {
         room.setEstado(Room.EstadoRoom.ACTIVO);
         roomRepository.update(room);
         activeRoomsCache.put(room.getId(), room);
+        requestMessages.remove(roomId);
 
         // Notificar a todos los miembros del room
         notifyRoomApproved(room);
@@ -134,6 +141,7 @@ public class RoomService {
         room.setEstado(Room.EstadoRoom.RECHAZADO);
         roomRepository.update(room);
         activeRoomsCache.remove(room.getId());
+        requestMessages.remove(roomId);
 
         // Notificar al creador
         notifyRoomRejected(room);
@@ -155,6 +163,7 @@ public class RoomService {
         room.setEstado(Room.EstadoRoom.CERRADO);
         roomRepository.update(room);
         activeRoomsCache.remove(room.getId());
+        requestMessages.remove(roomId);
 
         // Notificar a todos los miembros
         notifyRoomClosed(room);
@@ -214,7 +223,9 @@ public class RoomService {
         if (serverUsername == null) {
             return Collections.emptyList();
         }
-        return roomRepository.findActiveRooms(serverUsername);
+        List<Room> rooms = roomRepository.findActiveRooms(serverUsername);
+        rooms.forEach(this::hydrateRequestMessage);
+        return rooms;
     }
 
     /**
@@ -235,6 +246,7 @@ public class RoomService {
         List<Room> pending = allRooms.stream()
                 .filter(r -> r.getEstado() == Room.EstadoRoom.PENDIENTE)
                 .toList();
+        pending.forEach(this::hydrateRequestMessage);
         System.out.println("[RoomService] Rooms PENDIENTES: " + pending.size());
         
         return pending;
@@ -248,7 +260,9 @@ public class RoomService {
         if (cached != null) {
             return Optional.of(cached);
         }
-        return roomRepository.findById(roomId);
+        Optional<Room> roomOpt = roomRepository.findById(roomId);
+        roomOpt.ifPresent(this::hydrateRequestMessage);
+        return roomOpt;
     }
 
     /**
@@ -296,8 +310,19 @@ public class RoomService {
         if (serverUsername != null) {
             List<Room> activeRooms = roomRepository.findActiveRooms(serverUsername);
             for (Room room : activeRooms) {
+                hydrateRequestMessage(room);
                 activeRoomsCache.put(room.getId(), room);
             }
+        }
+    }
+
+    private void hydrateRequestMessage(Room room) {
+        if (room == null || room.getId() == null) {
+            return;
+        }
+        String message = requestMessages.get(room.getId());
+        if (message != null && (room.getRequestMessage() == null || room.getRequestMessage().isBlank())) {
+            room.setRequestMessage(message);
         }
     }
 
