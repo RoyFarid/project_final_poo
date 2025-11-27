@@ -15,7 +15,8 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Servicio para manejar mensajes de control, como la lista de usuarios conectados
+ * Servicio para manejar mensajes de control, como la lista de usuarios
+ * conectados
  */
 public class ControlService {
     private static final Logger logger = LoggerFactory.getLogger(ControlService.class);
@@ -26,7 +27,7 @@ public class ControlService {
     private String traceId;
     private final UserAliasRegistry aliasRegistry;
     private final RoomService roomService;
-    
+
     // Tipos de mensajes de control
     public static final byte CONTROL_USER_LIST = 1;
     public static final byte CONTROL_USER_CONNECTED = 2;
@@ -91,10 +92,9 @@ public class ControlService {
         Set<String> connectedUsers = new java.util.HashSet<>(connectionManager.getConnectedClients());
         String snapshot = buildUserListJson(connectedUsers, null);
         eventAggregator.publish(new NetworkEvent(
-            NetworkEvent.EventType.CONNECTED,
-            snapshot,
-            "SERVER_UI"
-        ));
+                NetworkEvent.EventType.CONNECTED,
+                snapshot,
+                "SERVER_UI"));
     }
 
     /**
@@ -121,14 +121,13 @@ public class ControlService {
             int correlId = correlIdGenerator.incrementAndGet();
             byte[] dataBytes = data.getBytes(StandardCharsets.UTF_8);
             int checksum = calculateChecksum(dataBytes);
-            
+
             // Crear header con tipo CONTROL
             MessageHeader header = new MessageHeader(
-                MessageHeader.MessageType.CONTROL,
-                dataBytes.length + 1, // +1 para el tipo de control
-                correlId,
-                checksum
-            );
+                    MessageHeader.MessageType.CONTROL,
+                    dataBytes.length + 1, // +1 para el tipo de control
+                    correlId,
+                    checksum);
 
             // Serializar mensaje completo: header + tipoControl + datos
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -138,7 +137,8 @@ public class ControlService {
             byte[] fullMessage = baos.toByteArray();
 
             connectionManager.send(connectionId, fullMessage);
-            logger.info("Mensaje de control enviado a " + connectionId + " (tipo: " + controlType + ", datos: " + data + ")");
+            logger.info("Mensaje de control enviado a " + connectionId + " (tipo: " + controlType + ", datos: " + data
+                    + ")");
             logService.logInfo("Mensaje de control enviado a " + connectionId, "ControlService", traceId, null);
         } catch (Exception e) {
             logger.error("Error enviando mensaje de control", e);
@@ -158,7 +158,8 @@ public class ControlService {
         sendControlMessage(serverConnectionId, CONTROL_AUTH_REQUEST, payload);
     }
 
-    public void sendRegisterRequest(String serverConnectionId, String username, String password, String email) throws IOException {
+    public void sendRegisterRequest(String serverConnectionId, String username, String password, String email)
+            throws IOException {
         String payload = encodeCredential(username) + "|" + encodeCredential(password) + "|" + encodeCredential(email);
         sendControlMessage(serverConnectionId, CONTROL_REGISTER_REQUEST, payload);
     }
@@ -192,7 +193,7 @@ public class ControlService {
             if (header.getTipo() == MessageHeader.MessageType.CONTROL) {
                 // Leer tipo de control
                 byte controlType = data[MessageHeader.HEADER_SIZE];
-                
+
                 // Leer datos
                 byte[] dataBytes = new byte[header.getLongitud() - 1]; // -1 porque el tipo de control ya se leyó
                 System.arraycopy(data, MessageHeader.HEADER_SIZE + 1, dataBytes, 0, dataBytes.length);
@@ -212,25 +213,23 @@ public class ControlService {
                         // Publicar evento con la lista de usuarios
                         logger.info("Lista de usuarios recibida: " + controlData);
                         eventAggregator.publish(new NetworkEvent(
-                            NetworkEvent.EventType.CONNECTED,
-                            controlData, // JSON con la lista de usuarios
-                            "SERVER"
-                        ));
-                        logService.logInfo("Lista de usuarios recibida: " + controlData, "ControlService", traceId, null);
+                                NetworkEvent.EventType.CONNECTED,
+                                controlData, // JSON con la lista de usuarios
+                                "SERVER"));
+                        logService.logInfo("Lista de usuarios recibida: " + controlData, "ControlService", traceId,
+                                null);
                         break;
                     case CONTROL_USER_CONNECTED:
                         eventAggregator.publish(new NetworkEvent(
-                            NetworkEvent.EventType.CONNECTED,
-                            controlData, // ID del usuario conectado
-                            "SERVER"
-                        ));
+                                NetworkEvent.EventType.CONNECTED,
+                                controlData, // ID del usuario conectado
+                                "SERVER"));
                         break;
                     case CONTROL_USER_DISCONNECTED:
                         eventAggregator.publish(new NetworkEvent(
-                            NetworkEvent.EventType.DISCONNECTED,
-                            controlData, // ID del usuario desconectado
-                            "SERVER"
-                        ));
+                                NetworkEvent.EventType.DISCONNECTED,
+                                controlData, // ID del usuario desconectado
+                                "SERVER"));
                         break;
                     case CONTROL_USER_ALIAS:
                         if (connectionManager.isServerMode()) {
@@ -248,10 +247,9 @@ public class ControlService {
                     case CONTROL_AUTH_RESPONSE:
                         OperationResultPayload authResult = OperationResultPayload.fromPayload(controlData);
                         eventAggregator.publish(new NetworkEvent(
-                            NetworkEvent.EventType.AUTH_RESULT,
-                            authResult,
-                            source
-                        ));
+                                NetworkEvent.EventType.AUTH_RESULT,
+                                authResult,
+                                source));
                         break;
                     case CONTROL_REGISTER_REQUEST:
                         if (connectionManager.isServerMode()) {
@@ -261,10 +259,9 @@ public class ControlService {
                     case CONTROL_REGISTER_RESPONSE:
                         OperationResultPayload registerResult = OperationResultPayload.fromPayload(controlData);
                         eventAggregator.publish(new NetworkEvent(
-                            NetworkEvent.EventType.REGISTER_RESULT,
-                            registerResult,
-                            source
-                        ));
+                                NetworkEvent.EventType.REGISTER_RESULT,
+                                registerResult,
+                                source));
                         break;
                     case CONTROL_ROOM_CREATE_REQUEST:
                         if (connectionManager.isServerMode()) {
@@ -273,10 +270,9 @@ public class ControlService {
                         break;
                     case CONTROL_ROOM_CREATE_RESPONSE:
                         eventAggregator.publish(new NetworkEvent(
-                            NetworkEvent.EventType.ROOM_CREATED,
-                            controlData,
-                            source
-                        ));
+                                NetworkEvent.EventType.ROOM_CREATED,
+                                controlData,
+                                source));
                         break;
                     case CONTROL_ROOM_JOIN_REQUEST:
                         if (connectionManager.isServerMode()) {
@@ -286,10 +282,9 @@ public class ControlService {
                     case CONTROL_ROOM_JOIN_RESPONSE:
                         RoomJoinResponse joinResponse = parseRoomJoinResponse(controlData);
                         eventAggregator.publish(new NetworkEvent(
-                            NetworkEvent.EventType.ROOM_MEMBER_ADDED,
-                            joinResponse,
-                            source
-                        ));
+                                NetworkEvent.EventType.ROOM_MEMBER_ADDED,
+                                joinResponse,
+                                source));
                         break;
                     case CONTROL_ROOM_LEAVE:
                         if (connectionManager.isServerMode()) {
@@ -299,28 +294,25 @@ public class ControlService {
                     case CONTROL_ROOM_APPROVE:
                         if (!connectionManager.isServerMode()) {
                             eventAggregator.publish(new NetworkEvent(
-                                NetworkEvent.EventType.ROOM_APPROVED,
-                                parseRoomPayload(controlData, Room.EstadoRoom.ACTIVO),
-                                source
-                            ));
+                                    NetworkEvent.EventType.ROOM_APPROVED,
+                                    parseRoomPayload(controlData, Room.EstadoRoom.ACTIVO),
+                                    source));
                         }
                         break;
                     case CONTROL_ROOM_REJECT:
                         if (!connectionManager.isServerMode()) {
                             eventAggregator.publish(new NetworkEvent(
-                                NetworkEvent.EventType.ROOM_REJECTED,
-                                parseRoomPayload(controlData, Room.EstadoRoom.RECHAZADO),
-                                source
-                            ));
+                                    NetworkEvent.EventType.ROOM_REJECTED,
+                                    parseRoomPayload(controlData, Room.EstadoRoom.RECHAZADO),
+                                    source));
                         }
                         break;
                     case CONTROL_ROOM_CLOSE:
                         if (!connectionManager.isServerMode()) {
                             eventAggregator.publish(new NetworkEvent(
-                                NetworkEvent.EventType.ROOM_CLOSED,
-                                parseRoomPayload(controlData, Room.EstadoRoom.CERRADO),
-                                source
-                            ));
+                                    NetworkEvent.EventType.ROOM_CLOSED,
+                                    parseRoomPayload(controlData, Room.EstadoRoom.CERRADO),
+                                    source));
                         }
                         break;
                     case CONTROL_ROOM_LIST:
@@ -333,10 +325,9 @@ public class ControlService {
                         } else {
                             List<RoomSummary> summaries = parseRoomListJson(controlData);
                             eventAggregator.publish(new NetworkEvent(
-                                NetworkEvent.EventType.ROOM_LIST,
-                                summaries,
-                                source
-                            ));
+                                    NetworkEvent.EventType.ROOM_LIST,
+                                    summaries,
+                                    source));
                         }
                         break;
                     case CONTROL_ADMIN_MUTE:
@@ -347,10 +338,9 @@ public class ControlService {
                     case CONTROL_ADMIN_UNBLOCK_MESSAGES:
                         // Estos se manejan directamente desde el servidor
                         eventAggregator.publish(new NetworkEvent(
-                            NetworkEvent.EventType.ERROR,
-                            controlData,
-                            source
-                        ));
+                                NetworkEvent.EventType.ERROR,
+                                controlData,
+                                source));
                         break;
                 }
             }
@@ -378,10 +368,10 @@ public class ControlService {
                 json.append(",");
             }
             json.append("\"")
-                .append(escapeJson(user))
-                .append("::")
-                .append(escapeJson(alias))
-                .append("\"");
+                    .append(escapeJson(user))
+                    .append("::")
+                    .append(escapeJson(alias))
+                    .append("\"");
             first = false;
         }
         json.append("]");
@@ -497,14 +487,16 @@ public class ControlService {
             String creator = "";
             for (String field : fields) {
                 String[] kv = field.split(":", 2);
-                if (kv.length != 2) continue;
+                if (kv.length != 2)
+                    continue;
                 String key = kv[0].replace("\"", "").trim();
                 String value = kv[1].replace("\"", "").trim();
                 switch (key) {
                     case "id" -> {
                         try {
                             id = Long.parseLong(value);
-                        } catch (NumberFormatException ignored) { }
+                        } catch (NumberFormatException ignored) {
+                        }
                     }
                     case "name" -> name = value;
                     case "creator" -> creator = value;
@@ -553,7 +545,8 @@ public class ControlService {
         try {
             String[] parts = payload.split("\\|", -1);
             if (parts.length < 2) {
-                sendControlMessage(source, CONTROL_AUTH_RESPONSE, OperationResultPayload.error("Payload inválido").toPayload());
+                sendControlMessage(source, CONTROL_AUTH_RESPONSE,
+                        OperationResultPayload.error("Payload inválido").toPayload());
                 return;
             }
             String username = decodeCredential(parts[0]);
@@ -575,7 +568,8 @@ public class ControlService {
         } catch (Exception e) {
             logger.error("Error procesando autenticación remota", e);
             try {
-                sendControlMessage(source, CONTROL_AUTH_RESPONSE, OperationResultPayload.error("Error interno").toPayload());
+                sendControlMessage(source, CONTROL_AUTH_RESPONSE,
+                        OperationResultPayload.error("Error interno").toPayload());
             } catch (IOException ioException) {
                 logger.error("No se pudo enviar respuesta de error de autenticación", ioException);
             }
@@ -586,7 +580,8 @@ public class ControlService {
         try {
             String[] parts = payload.split("\\|");
             if (parts.length < 3) {
-                sendControlMessage(source, CONTROL_REGISTER_RESPONSE, OperationResultPayload.error("Payload inválido").toPayload());
+                sendControlMessage(source, CONTROL_REGISTER_RESPONSE,
+                        OperationResultPayload.error("Payload inválido").toPayload());
                 return;
             }
 
@@ -602,7 +597,8 @@ public class ControlService {
         } catch (Exception e) {
             logger.error("Error procesando registro remoto", e);
             try {
-                sendControlMessage(source, CONTROL_REGISTER_RESPONSE, OperationResultPayload.error(e.getMessage()).toPayload());
+                sendControlMessage(source, CONTROL_REGISTER_RESPONSE,
+                        OperationResultPayload.error(e.getMessage()).toPayload());
             } catch (IOException ioException) {
                 logger.error("No se pudo enviar respuesta de error de registro", ioException);
             }
@@ -613,12 +609,13 @@ public class ControlService {
         try {
             logger.info("Procesando solicitud de creación de room desde: " + source);
             logger.info("Payload recibido: " + payload);
-            
-            // Formato: roomName|creatorUsername|member1,member2,member3|mensaje|includeServer
+
+            // Formato:
+            // roomName|creatorUsername|member1,member2,member3|mensaje|includeServer
             String[] parts = payload.split("\\|", -1);
             if (parts.length < 2) {
-                sendControlMessage(source, CONTROL_ROOM_CREATE_RESPONSE, 
-                    OperationResultPayload.error("Payload inválido").toPayload());
+                sendControlMessage(source, CONTROL_ROOM_CREATE_RESPONSE,
+                        OperationResultPayload.error("Payload inválido").toPayload());
                 return;
             }
 
@@ -627,7 +624,7 @@ public class ControlService {
             Set<String> members = new java.util.HashSet<>();
             String requestMessage = parts.length > 3 ? decodeCredential(parts[3]) : "";
             boolean includeServer = parts.length > 4 && "true".equals(parts[4]);
-            
+
             if (parts.length > 2) {
                 String membersStr = decodeCredential(parts[2]);
                 if (!membersStr.isEmpty()) {
@@ -640,40 +637,42 @@ public class ControlService {
                 }
             }
 
-            logger.info("Room name: " + roomName + ", Creator: " + creatorUsername + ", Members: " + members + ", IncludeServer: " + includeServer);
-            
+            logger.info("Room name: " + roomName + ", Creator: " + creatorUsername + ", Members: " + members
+                    + ", IncludeServer: " + includeServer);
+
             // Verificar que RoomService tenga configurado el serverUsername
             String serverUsername = roomService.getServerUsername();
             if (serverUsername == null || serverUsername.isEmpty()) {
                 logger.error("RoomService no tiene configurado el serverUsername");
-                sendControlMessage(source, CONTROL_ROOM_CREATE_RESPONSE, 
-                    OperationResultPayload.error("El servidor no está configurado para recibir rooms").toPayload());
+                sendControlMessage(source, CONTROL_ROOM_CREATE_RESPONSE,
+                        OperationResultPayload.error("El servidor no está configurado para recibir rooms").toPayload());
                 return;
             }
-            
+
             logger.info("ServerUsername configurado: " + serverUsername);
-            
-            Room room = roomService.createRoomRequest(roomName, source, creatorUsername, members, requestMessage, includeServer);
+
+            Room room = roomService.createRoomRequest(roomName, source, creatorUsername, members, requestMessage,
+                    includeServer);
             logger.info("Room creado con ID: " + room.getId() + ", Estado: " + room.getEstado());
-            
+
             // Publicar evento para que el servidor vea la solicitud pendiente
             // Usar "SERVER" como source para que ServerView lo detecte correctamente
             eventAggregator.publish(new NetworkEvent(
-                NetworkEvent.EventType.ROOM_CREATED,
-                room,
-                "SERVER"
-            ));
+                    NetworkEvent.EventType.ROOM_CREATED,
+                    room,
+                    "SERVER"));
             logger.info("Evento ROOM_CREATED publicado");
 
             // Responder al cliente que la solicitud fue recibida
-            String response = "PENDIENTE|" + encodeCredential(String.valueOf(room.getId())) + "|" + encodeCredential(roomName);
+            String response = "PENDIENTE|" + encodeCredential(String.valueOf(room.getId())) + "|"
+                    + encodeCredential(roomName);
             sendControlMessage(source, CONTROL_ROOM_CREATE_RESPONSE, response);
             logger.info("Respuesta enviada al cliente");
         } catch (Exception e) {
             logger.error("Error procesando solicitud de creación de room: " + e.getMessage(), e);
             try {
-                sendControlMessage(source, CONTROL_ROOM_CREATE_RESPONSE, 
-                    OperationResultPayload.error("Error al crear room: " + e.getMessage()).toPayload());
+                sendControlMessage(source, CONTROL_ROOM_CREATE_RESPONSE,
+                        OperationResultPayload.error("Error al crear room: " + e.getMessage()).toPayload());
             } catch (IOException ioException) {
                 logger.error("No se pudo enviar respuesta de error de room", ioException);
             }
@@ -685,19 +684,19 @@ public class ControlService {
             // Formato: roomId
             String roomIdStr = decodeCredential(payload);
             Long roomId = Long.parseLong(roomIdStr);
-            
+
             if (roomService.addMemberToRoom(roomId, source)) {
                 String response = "OK|" + encodeCredential(String.valueOf(roomId));
                 sendControlMessage(source, CONTROL_ROOM_JOIN_RESPONSE, response);
             } else {
-                sendControlMessage(source, CONTROL_ROOM_JOIN_RESPONSE, 
-                    OperationResultPayload.error("No se pudo unir al room").toPayload());
+                sendControlMessage(source, CONTROL_ROOM_JOIN_RESPONSE,
+                        OperationResultPayload.error("No se pudo unir al room").toPayload());
             }
         } catch (Exception e) {
             logger.error("Error procesando solicitud de unión a room", e);
             try {
-                sendControlMessage(source, CONTROL_ROOM_JOIN_RESPONSE, 
-                    OperationResultPayload.error("Error: " + e.getMessage()).toPayload());
+                sendControlMessage(source, CONTROL_ROOM_JOIN_RESPONSE,
+                        OperationResultPayload.error("Error: " + e.getMessage()).toPayload());
             } catch (IOException ioException) {
                 logger.error("No se pudo enviar respuesta de error", ioException);
             }
@@ -708,7 +707,7 @@ public class ControlService {
         try {
             String roomIdStr = decodeCredential(payload);
             Long roomId = Long.parseLong(roomIdStr);
-            
+
             roomService.removeMemberFromRoom(roomId, source);
         } catch (Exception e) {
             logger.error("Error procesando salida de room", e);
@@ -726,7 +725,8 @@ public class ControlService {
                     if (memberId.startsWith("SERVER_") || !connectionManager.getConnectedClients().contains(memberId)) {
                         continue;
                     }
-                    String response = "APPROVED|" + encodeCredential(String.valueOf(roomId)) + "|" + encodeCredential(room.getName());
+                    String response = "APPROVED|" + encodeCredential(String.valueOf(roomId)) + "|"
+                            + encodeCredential(room.getName());
                     sendControlMessage(memberId, CONTROL_ROOM_APPROVE, response);
                 }
             }
@@ -739,10 +739,11 @@ public class ControlService {
             if (roomOpt.isPresent()) {
                 Room room = roomOpt.get();
                 // Notificar al creador
-                String response = "REJECTED|" + encodeCredential(String.valueOf(roomId)) + "|" + encodeCredential(room.getName());
+                String response = "REJECTED|" + encodeCredential(String.valueOf(roomId)) + "|"
+                        + encodeCredential(room.getName());
                 if (room.getCreatorConnectionId() != null
-                    && !room.getCreatorConnectionId().startsWith("SERVER_")
-                    && connectionManager.getConnectedClients().contains(room.getCreatorConnectionId())) {
+                        && !room.getCreatorConnectionId().startsWith("SERVER_")
+                        && connectionManager.getConnectedClients().contains(room.getCreatorConnectionId())) {
                     sendControlMessage(room.getCreatorConnectionId(), CONTROL_ROOM_REJECT, response);
                 }
             }
@@ -762,7 +763,8 @@ public class ControlService {
                     if (!connectionManager.getConnectedClients().contains(memberId)) {
                         continue;
                     }
-                    String response = "CLOSED|" + encodeCredential(String.valueOf(roomId)) + "|" + encodeCredential(room.getName());
+                    String response = "CLOSED|" + encodeCredential(String.valueOf(roomId)) + "|"
+                            + encodeCredential(room.getName());
                     try {
                         sendControlMessage(memberId, CONTROL_ROOM_CLOSE, response);
                     } catch (IOException e) {
@@ -774,19 +776,21 @@ public class ControlService {
     }
 
     public void sendRoomList(String connectionId) throws IOException {
-        List<Room> activeRooms = roomService.getActiveRooms();
+        // Solo enviar rooms donde el cliente es miembro
+        List<Room> userRooms = roomService.getActiveRoomsForUser(connectionId);
+
         // Serializar lista de rooms a JSON simple
         StringBuilder json = new StringBuilder("[");
         boolean first = true;
-        for (Room room : activeRooms) {
+        for (Room room : userRooms) {
             if (!first) {
                 json.append(",");
             }
             json.append("{")
-                .append("\"id\":").append(room.getId()).append(",")
-                .append("\"name\":\"").append(escapeJson(room.getName())).append("\",")
-                .append("\"creator\":\"").append(escapeJson(room.getCreatorUsername())).append("\"")
-                .append("}");
+                    .append("\"id\":").append(room.getId()).append(",")
+                    .append("\"name\":\"").append(escapeJson(room.getName())).append("\",")
+                    .append("\"creator\":\"").append(escapeJson(room.getCreatorUsername())).append("\"")
+                    .append("}");
             first = false;
         }
         json.append("]");
@@ -880,12 +884,11 @@ public class ControlService {
 
         public static OperationResultPayload success(Usuario usuario) {
             return new OperationResultPayload(
-                true,
-                "",
-                usuario.getId(),
-                usuario.getUsername(),
-                usuario.getEmail()
-            );
+                    true,
+                    "",
+                    usuario.getId(),
+                    usuario.getUsername(),
+                    usuario.getEmail());
         }
 
         public static OperationResultPayload error(String message) {
@@ -918,10 +921,10 @@ public class ControlService {
             String encodedEmail = encodeValue(email);
             String userIdValue = userId == null ? "" : userId.toString();
             return (success ? "OK" : "ERROR") + "|"
-                + encodedMessage + "|"
-                + userIdValue + "|"
-                + encodedUsername + "|"
-                + encodedEmail;
+                    + encodedMessage + "|"
+                    + userIdValue + "|"
+                    + encodedUsername + "|"
+                    + encodedEmail;
         }
 
         public static OperationResultPayload fromPayload(String payload) {
@@ -952,4 +955,3 @@ public class ControlService {
         }
     }
 }
-

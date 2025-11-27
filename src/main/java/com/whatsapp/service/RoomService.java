@@ -75,21 +75,25 @@ public class RoomService {
     /**
      * Crea una solicitud de room (pendiente de aprobación)
      */
-    public Room createRoomRequest(String roomName, String creatorConnectionId, String creatorUsername, Set<String> memberConnectionIds, String requestMessage) {
-        return createRoomRequest(roomName, creatorConnectionId, creatorUsername, memberConnectionIds, requestMessage, false);
+    public Room createRoomRequest(String roomName, String creatorConnectionId, String creatorUsername,
+            Set<String> memberConnectionIds, String requestMessage) {
+        return createRoomRequest(roomName, creatorConnectionId, creatorUsername, memberConnectionIds, requestMessage,
+                false);
     }
 
     /**
-     * Crea una solicitud de room (pendiente de aprobación) con opción de incluir servidor
+     * Crea una solicitud de room (pendiente de aprobación) con opción de incluir
+     * servidor
      */
-    public Room createRoomRequest(String roomName, String creatorConnectionId, String creatorUsername, Set<String> memberConnectionIds, String requestMessage, boolean includeServer) {
+    public Room createRoomRequest(String roomName, String creatorConnectionId, String creatorUsername,
+            Set<String> memberConnectionIds, String requestMessage, boolean includeServer) {
         System.out.println("[RoomService] createRoomRequest llamado");
         System.out.println("[RoomService] serverUsername: " + serverUsername);
         System.out.println("[RoomService] roomName: " + roomName);
         System.out.println("[RoomService] creatorConnectionId: " + creatorConnectionId);
         System.out.println("[RoomService] creatorUsername: " + creatorUsername);
         System.out.println("[RoomService] includeServer: " + includeServer);
-        
+
         if (serverUsername == null) {
             System.out.println("[RoomService] ERROR: serverUsername es null!");
             throw new IllegalStateException("Server username no está configurado");
@@ -100,7 +104,7 @@ public class RoomService {
         room.setIncludeServer(includeServer);
         room.getMembers().addAll(memberConnectionIds);
         room.getMembers().add(creatorConnectionId); // El creador también es miembro
-        
+
         System.out.println("[RoomService] Room creado en memoria, guardando en BD...");
         try {
             room = roomRepository.save(room);
@@ -110,13 +114,13 @@ public class RoomService {
             e.printStackTrace();
             throw e;
         }
-        
+
         activeRoomsCache.put(room.getId(), room);
         if (requestMessage != null && !requestMessage.isBlank()) {
             requestMessages.put(room.getId(), requestMessage);
         }
         System.out.println("[RoomService] Room agregado a cache");
-        
+
         logService.logInfo("Solicitud de room creada: " + roomName, "RoomService", traceId, null);
         return room;
     }
@@ -136,21 +140,21 @@ public class RoomService {
         }
 
         room.setEstado(Room.EstadoRoom.ACTIVO);
-        
+
         // Si el cliente quería incluir al servidor, agregarlo automáticamente
         if (room.isIncludeServer() && serverUsername != null) {
             String serverMemberId = "SERVER_" + serverUsername;
             room.addMember(serverMemberId);
             System.out.println("[RoomService] Servidor agregado automáticamente al room: " + serverMemberId);
         }
-        
+
         roomRepository.update(room);
         activeRoomsCache.put(room.getId(), room);
         requestMessages.remove(roomId);
 
         // Notificar a todos los miembros del room
         notifyRoomApproved(room);
-        
+
         logService.logInfo("Room aprobado: " + room.getName(), "RoomService", traceId, null);
         return true;
     }
@@ -176,7 +180,7 @@ public class RoomService {
 
         // Notificar al creador
         notifyRoomRejected(room);
-        
+
         logService.logInfo("Room rechazado: " + room.getName(), "RoomService", traceId, null);
         return true;
     }
@@ -198,7 +202,7 @@ public class RoomService {
 
         // Notificar a todos los miembros
         notifyRoomClosed(room);
-        
+
         logService.logInfo("Room cerrado: " + room.getName(), "RoomService", traceId, null);
         return true;
     }
@@ -228,7 +232,7 @@ public class RoomService {
 
         // Notificar al nuevo miembro
         notifyMemberAdded(room, connectionId);
-        
+
         return true;
     }
 
@@ -248,7 +252,7 @@ public class RoomService {
 
         // Notificar al miembro eliminado
         notifyMemberRemoved(room, connectionId);
-        
+
         return true;
     }
 
@@ -270,21 +274,22 @@ public class RoomService {
     public List<Room> getPendingRooms() {
         System.out.println("[RoomService] getPendingRooms llamado");
         System.out.println("[RoomService] serverUsername: " + serverUsername);
-        
+
         if (serverUsername == null) {
             System.out.println("[RoomService] serverUsername es null, retornando lista vacía");
             return Collections.emptyList();
         }
-        
+
         List<Room> allRooms = roomRepository.findByServerUsername(serverUsername);
-        System.out.println("[RoomService] Rooms encontrados para servidor '" + serverUsername + "': " + allRooms.size());
-        
+        System.out
+                .println("[RoomService] Rooms encontrados para servidor '" + serverUsername + "': " + allRooms.size());
+
         List<Room> pending = allRooms.stream()
                 .filter(r -> r.getEstado() == Room.EstadoRoom.PENDIENTE)
                 .toList();
         pending.forEach(this::hydrateRequestMessage);
         System.out.println("[RoomService] Rooms PENDIENTES: " + pending.size());
-        
+
         return pending;
     }
 
@@ -312,6 +317,18 @@ public class RoomService {
             }
         }
         return userRooms;
+    }
+
+    /**
+     * Obtiene rooms activos en los que participa un usuario específico.
+     * A diferencia de getRoomsForUser, este método consulta la base de datos
+     * para asegurar que obtiene todos los rooms activos del usuario.
+     */
+    public List<Room> getActiveRoomsForUser(String connectionId) {
+        List<Room> allActiveRooms = getActiveRooms();
+        return allActiveRooms.stream()
+                .filter(room -> room.hasMember(connectionId))
+                .toList();
     }
 
     /**
@@ -365,42 +382,37 @@ public class RoomService {
     private void notifyRoomApproved(Room room) {
         // Publicar evento para notificar a los miembros
         eventAggregator.publish(new NetworkEvent(
-            NetworkEvent.EventType.ROOM_APPROVED,
-            room,
-            "SERVER"
-        ));
+                NetworkEvent.EventType.ROOM_APPROVED,
+                room,
+                "SERVER"));
     }
 
     private void notifyRoomRejected(Room room) {
         eventAggregator.publish(new NetworkEvent(
-            NetworkEvent.EventType.ROOM_REJECTED,
-            room,
-            "SERVER"
-        ));
+                NetworkEvent.EventType.ROOM_REJECTED,
+                room,
+                "SERVER"));
     }
 
     private void notifyRoomClosed(Room room) {
         eventAggregator.publish(new NetworkEvent(
-            NetworkEvent.EventType.ROOM_CLOSED,
-            room,
-            "SERVER"
-        ));
+                NetworkEvent.EventType.ROOM_CLOSED,
+                room,
+                "SERVER"));
     }
 
     private void notifyMemberAdded(Room room, String connectionId) {
         eventAggregator.publish(new NetworkEvent(
-            NetworkEvent.EventType.ROOM_MEMBER_ADDED,
-            new RoomMemberEvent(room.getId(), connectionId),
-            "SERVER"
-        ));
+                NetworkEvent.EventType.ROOM_MEMBER_ADDED,
+                new RoomMemberEvent(room.getId(), connectionId),
+                "SERVER"));
     }
 
     private void notifyMemberRemoved(Room room, String connectionId) {
         eventAggregator.publish(new NetworkEvent(
-            NetworkEvent.EventType.ROOM_MEMBER_REMOVED,
-            new RoomMemberEvent(room.getId(), connectionId),
-            "SERVER"
-        ));
+                NetworkEvent.EventType.ROOM_MEMBER_REMOVED,
+                new RoomMemberEvent(room.getId(), connectionId),
+                "SERVER"));
     }
 
     public static class RoomMemberEvent {
@@ -421,4 +433,3 @@ public class RoomService {
         }
     }
 }
-
