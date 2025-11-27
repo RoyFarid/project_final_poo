@@ -105,7 +105,7 @@ public class ClientRoomChatView extends BorderPane implements com.whatsapp.netwo
         remoteVideoView.setFitWidth(220);
         remoteVideoView.setPreserveRatio(true);
         remoteVideoView.setStyle("-fx-border-color: #cccccc; -fx-background-color: #000;");
-        videoStatusLabel = new Label("Video: sin señal");
+        videoStatusLabel = new Label(" ");
         videoStatusLabel.setStyle("-fx-text-fill: #666;");
         videoBox.setPadding(new Insets(8));
         videoBox.getChildren().setAll(remoteVideoView, videoStatusLabel);
